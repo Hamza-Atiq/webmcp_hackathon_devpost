@@ -8,6 +8,7 @@ import type {
   ServiceName,
   ServiceState,
 } from "./types";
+import type { AppliedAction } from "./actions";
 
 /**
  * The simulated production environment.
@@ -151,6 +152,8 @@ export interface World {
   breachSec: Record<ServiceName, number>;
   /** Consecutive simulated seconds each service has spent inside recovery thresholds. */
   recoverySec: Record<ServiceName, number>;
+  /** Actions applied to the environment, oldest first — FR-10.1a. */
+  actions: AppliedAction[];
   /** Monotonic id counters. Never random — FR-1.5. */
   counters: Record<string, number>;
 }
@@ -189,6 +192,7 @@ export function createWorld(seed: number): World {
     incident: null,
     breachSec,
     recoverySec,
+    actions: [],
     counters: {},
   };
 }

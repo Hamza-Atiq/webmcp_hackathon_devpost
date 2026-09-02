@@ -54,7 +54,7 @@ describe("scenario 1 — connection pool regression", () => {
     engine.startScenario("s1");
     engine.advanceSeconds(180);
 
-    expect(engine.rollback("checkout-service")).toBe(true);
+    expect(engine.rollback("checkout-service")).not.toBeNull();
     engine.advanceSeconds(180);
 
     expect(recent(engine, "errorRate", 30)).toBeLessThanOrEqual(RECOVERY_ERROR_RATE);

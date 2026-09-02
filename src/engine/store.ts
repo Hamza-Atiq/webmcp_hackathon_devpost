@@ -1,6 +1,6 @@
 import { LOG_RETENTION, METRIC_RETENTION_SEC, TRACE_RETENTION } from "./constants";
 import { SERVICE_NAMES } from "./world";
-import type { LogEntry, MetricPoint, ServiceName, Trace } from "./types";
+import type { LogEntry, MetricField, MetricPoint, ServiceName, Trace } from "./types";
 
 /**
  * Observation storage — ring buffers over what the simulation produced.
@@ -51,7 +51,7 @@ export function latestMetric(store: Store, service: ServiceName): MetricPoint | 
 export function meanOver(
   store: Store,
   service: ServiceName,
-  field: "errorRate" | "p99",
+  field: MetricField,
   seconds: number,
 ): number | null {
   const series = store.metrics[service];

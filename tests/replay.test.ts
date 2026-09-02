@@ -110,7 +110,7 @@ describe("rollback is always executable — FR-2.4a", () => {
     for (const service of SERVICE_NAMES) {
       const engine = new Engine(42);
       engine.advanceSeconds(30);
-      expect(engine.rollback(service, "human"), service).toBe(true);
+      expect(engine.rollback(service, "human"), service).not.toBeNull();
     }
   });
 
@@ -124,6 +124,8 @@ describe("rollback is always executable — FR-2.4a", () => {
 
     // An agent can see for itself that this predates the degradation (FR-2.4a).
     expect(target.t).toBeLessThan(0);
-    expect(engine.rollback("payment-service", "agent")).toBe(true);
+    const applied = engine.rollback("payment-service", "agent");
+    expect(applied).not.toBeNull();
+    expect(applied!.target).toBe(target.id);
   });
 });

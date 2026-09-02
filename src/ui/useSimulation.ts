@@ -135,18 +135,20 @@ export function useSimulation(): Simulation {
   const rollback = useCallback(
     (service: ServiceName) => {
       const engine = engineRef.current!;
-      const deployment = engine.world.deployments
-        .filter((d) => d.service === service && !d.rolledBack)
-        .sort((a, b) => b.t - a.t)[0];
 
-      const ok = engine.rollback(service, "human");
+      /*
+       * A human rollback is an applied action like any other: it mints an action_id and
+       * stores its before-snapshot, so `verify_remediation` can measure against it even
+       * though no agent was involved (FR-10.1a).
+       */
+      const applied = engine.rollback(service, "human");
       record(
         "rollback_deployment",
         `service: ${service}`,
-        ok
-          ? `Rolled back ${deployment?.version ?? "latest"} → ${deployment?.previousVersion ?? "previous"}`
+        applied
+          ? `${applied.summary} (${applied.id})`
           : `No deployment available to roll back on ${service}`,
-        ok,
+        applied !== null,
       );
       repaint();
     },

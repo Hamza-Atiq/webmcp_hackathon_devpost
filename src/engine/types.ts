@@ -89,6 +89,15 @@ export interface MetricPoint {
   replicas: number;
 }
 
+/**
+ * The numeric signals of a metric point, addressable by name.
+ *
+ * Derived from `MetricPoint` rather than listed separately, so a signal added to the
+ * simulation is queryable through the tool layer without a second edit that could be
+ * forgotten. `t` is the axis, not a signal.
+ */
+export type MetricField = Exclude<keyof MetricPoint, "t">;
+
 export interface LogEntry {
   id: string;
   t: number;

@@ -86,8 +86,10 @@ export function exposeConsoleHarness(): void {
     },
 
     rollback(service = "checkout-service") {
-      const ok = engine.rollback(service, "human");
-      return ok ? `rolled back ${service} at ${clock()}` : `nothing to roll back on ${service}`;
+      const applied = engine.rollback(service, "human");
+      return applied
+        ? `${applied.id}: ${applied.summary} at ${clock()}`
+        : `nothing to roll back on ${service}`;
     },
 
     health(service = "checkout-service") {

@@ -6,6 +6,7 @@ import { addTimelineEntry, setIncidentStatus } from "./incident";
 import { findRunbooks, runbookById, type Runbook } from "./runbooks";
 import { ownershipFor, type Ownership } from "./ownership";
 import { seedBaselineHistory } from "./deployments";
+import { actionById, mostRecentAction, recordAction, type AppliedAction } from "./actions";
 import { onset as s1Onset } from "./scenarios/s1";
 import type { Incident, IncidentStatus, MetricPoint, ServiceName, TimelineEntry } from "./types";
 
@@ -127,13 +128,28 @@ export class Engine {
    * so recovery is progressive rather than instant (FR-9.1). Returns false when there is
    * nothing eligible to roll back.
    */
-  rollback(service: ServiceName, actor: TimelineEntry["actor"] = "human"): boolean {
+  rollback(service: ServiceName, actor: TimelineEntry["actor"] = "human"): AppliedAction | null {
     const deployments = this.world.deployments
       .filter((d) => d.service === service && !d.rolledBack)
       .sort((a, b) => b.t - a.t);
 
     const latest = deployments[0];
-    if (!latest || !latest.previousVersion) return false;
+    if (!latest || !latest.previousVersion) return null;
+
+    /*
+     * The snapshot is taken before the configuration change is scheduled, so that
+     * "before the action" is the state the action was applied against rather than a
+     * state already moving under it (FR-10.1a).
+     */
+    const applied = recordAction(this.world, this.store, {
+      kind: "rollback_deployment",
+      service,
+      actor,
+      summary:
+        `Rolled back ${service} from ${latest.version} to ${latest.previousVersion} ` +
+        `(deployment ${latest.id}).`,
+      target: latest.id,
+    });
 
     for (const change of latest.diff) {
       if (change.key === "DB_POOL_MAX") {
@@ -144,13 +160,22 @@ export class Engine {
     latest.rolledBack = true;
 
     // FR-5.5: a remediation belongs on the incident timeline with its actor.
-    addTimelineEntry(
-      this.world,
-      actor,
-      `Rolled back ${service} from ${latest.version} to ${latest.previousVersion} ` +
-        `(deployment ${latest.id}).`,
-    );
-    return true;
+    addTimelineEntry(this.world, actor, applied.summary);
+    return applied;
+  }
+
+  /** Everything applied to the environment so far, oldest first — FR-10.1a, FR-13. */
+  get actions(): readonly AppliedAction[] {
+    return this.world.actions;
+  }
+
+  action(id: string): AppliedAction | undefined {
+    return actionById(this.world, id);
+  }
+
+  /** What a `verify_remediation` call with no `action_id` verifies. */
+  get lastAction(): AppliedAction | null {
+    return mostRecentAction(this.world);
   }
 }
 
@@ -160,6 +185,8 @@ export { RUNBOOKS, findRunbooks, runbookById } from "./runbooks";
 export { OWNERSHIP, ownershipFor } from "./ownership";
 export type { Runbook } from "./runbooks";
 export type { Ownership } from "./ownership";
+export { actionById, mostRecentAction, recordAction } from "./actions";
+export type { ActionKind, AppliedAction, ServiceSnapshot } from "./actions";
 export type {
   Deployment,
   Incident,
