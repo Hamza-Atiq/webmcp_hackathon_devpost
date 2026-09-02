@@ -97,7 +97,7 @@ and FR-8 gates it.
 
 | Signal | Healthy value |
 |---|---|
-| Aggregate request rate | ~120 rps, natural variation within ±10% |
+| Aggregate request rate | ~450 rps, natural variation within ±10% |
 | Error rate | ≤ 0.5% |
 | Latency p50 / p95 / p99 | ≤ 60 ms / ≤ 120 ms / ≤ 200 ms |
 | CPU / memory | ≤ 45% / ≤ 60% |
@@ -150,7 +150,7 @@ naming the filter that would narrow it.
 
 - FR-1.1 The system simulates five services: `api-gateway`, `checkout-service`,
   `payment-service`, `inventory-service`, `user-service`, with a defined dependency graph.
-- FR-1.2 A traffic generator produces a continuous request stream, baseline approximately 120
+- FR-1.2 A traffic generator produces a continuous request stream, baseline approximately 450
   requests per second, with bounded natural variation.
 - FR-1.3 Every metric, log entry and trace is **computed from simulated request outcomes**. No
   metric series, log line or trace may be read from a fixture, a recording, or a pre-written
@@ -174,7 +174,7 @@ data, the requirement is not met.
 
 | # | Scenario | Mechanism | Recent deploy exists |
 |---|---|---|---|
-| 1 | Config regression | `checkout-service` DB connection pool reduced 50 → 5 | Yes |
+| 1 | Config regression | `checkout-service` DB connection pool reduced 50 → 5. The pool is **shared at the service level** (a connection pooler), not per-replica — see FR-9.2a | Yes |
 | 2 | Resource exhaustion | `inventory-service` memory leak, degrades over hours | Yes |
 | 3 | Dependency failure | `payment-service` calls an external fraud-scoring provider behind the `payment_fraud_check_v2` flag; the provider is timing out | **No** |
 | 4 | Bad migration | A standalone schema migration job holds locks on the `user-service` database; the application reads through the migrating schema behind the `user_profile_schema_v2` flag | Yes, but **unrelated** |
@@ -370,6 +370,14 @@ Five actions, each with a declared blast radius shown to the human before approv
 
 `restart_service` is absent from scenario 2's columns because it belongs in none of them — see
 FR-9.3. No action appears in the "full fix" column more than twice (FR-2.4c).
+
+- FR-9.2a **The connection pool in scenario 1 is shared at the service level, not per-replica.**
+  This is what makes `scale_replicas` *partial* relief rather than a second full fix: adding
+  replicas spreads CPU load but adds no connections, so the queue that is actually causing the
+  latency is untouched and only `rollback_deployment` — restoring `DB_POOL_MAX` to 50 — drains it.
+  A per-replica pool would multiply capacity with every added replica and would therefore resolve
+  the incident, contradicting FR-9.2. Shared connection poolers are standard production practice,
+  so this costs no realism.
 
 - FR-9.3 In scenario 2, `restart_service` produces temporary recovery followed by renewed
   degradation — mitigation, not a fix. The distinction must be observable in the metrics.

@@ -82,7 +82,7 @@ rather than invented.
 One incident, modelled deeply. Deterministic, seeded, replayable.
 
 **Setup.** Five services: `api-gateway`, `checkout-service`, `payment-service`,
-`inventory-service`, `user-service`. Steady traffic around 120 requests per second.
+`inventory-service`, `user-service`. Steady traffic around 450 requests per second.
 
 **The change.** At T+0, `checkout-service v2.4.1` is deployed. Its config changes the database
 connection pool maximum from 50 to 5 — someone reducing memory usage without understanding the
