@@ -127,7 +127,16 @@ window; the query id is the citable unit, not individual data points.
 
 **Limits.** At most 3 proposals may be in `pending` or `awaiting_approval` status at once; further
 proposals are refused with an explanation. Approval timeout is 60 seconds wall-clock. The healthy
-window before a scenario auto-fires is 20 seconds wall-clock.
+window before a scenario auto-fires is 20 **simulated** seconds.
+
+*Corrected 2 September 2026: this read "20 seconds wall-clock", and it cannot be.* A wall-clock
+healthy window would begin the scenario at a different point on the simulated clock for every
+speed multiplier — 20 simulated seconds in at 1x, 1200 at 60x — so the same run would produce
+different evidence at different speeds. That is FR-3.4 broken outright and AC-12 with it. The
+approval timeout is genuinely wall-clock and stays that way, because it measures a human's
+patience rather than anything inside the simulation (FR-3.5); the healthy window measures the
+environment's own history and belongs to the simulated clock. At the default 10x the window is
+still about two real seconds, which is what the demo needs.
 
 **Output bounds.** Chrome's tool-security guidance recommends at most **1500 characters per
 individual tool output**. That is the design target for every tool; **4000 characters is a hard
