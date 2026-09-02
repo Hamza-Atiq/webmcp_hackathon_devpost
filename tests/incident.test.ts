@@ -3,8 +3,9 @@ import { Engine } from "../src/engine";
 import { classifySeverity, isBreaching, isRecovered } from "../src/engine/incident";
 import {
   INCIDENT_SUSTAIN_SEC,
+  RECOVERY_ERROR_RATE,
+  RECOVERY_P99_MS,
   RECOVERY_SUSTAIN_SEC,
-  SEV2_ERROR_RATE,
 } from "../src/engine/constants";
 
 /**
@@ -94,21 +95,20 @@ describe("incident detection", () => {
 
     expect(incident.severity).toBe("SEV-2");
 
-    // AC-5a: the severity is not taken on trust. Recompute it from the metric series
-    // the tools would return, and require the same answer.
+    // AC-5a: the severity is not taken on trust. Check it against the FR-0 table
+    // written out literally, applied to the metric series the tools would return.
+    // Calling classifySeverity() here instead would only prove the classifier agrees
+    // with itself — the assertion has to restate the spec independently.
     const series = engine.store.metrics["checkout-service"].slice(-5);
     const mean = (f: "errorRate" | "p99") =>
       series.reduce((sum, p) => sum + p[f], 0) / series.length;
 
-    const recomputed = classifySeverity({
-      errorRate: mean("errorRate"),
-      p99: mean("p99"),
-      requests: series[series.length - 1]!.requests,
-      errors: series[series.length - 1]!.errors,
-    });
+    const errorRate = mean("errorRate");
+    const p99 = mean("p99");
 
-    expect(recomputed).toBe("SEV-2");
-    expect(mean("errorRate")).toBeGreaterThan(SEV2_ERROR_RATE);
+    // FR-0, transcribed: SEV-1 above 25% errors; SEV-2 above 5% errors or 3000ms p99.
+    expect(errorRate).toBeLessThanOrEqual(0.25);
+    expect(errorRate > 0.05 || p99 > 3000).toBe(true);
   });
 
   it("records the measurements that produced the severity", () => {
@@ -221,6 +221,65 @@ describe("incident lifecycle", () => {
 
     const times = engine.incident!.timeline.map((e) => e.t);
     expect(times).toEqual([...times].sort((a, b) => a - b));
+  });
+});
+
+describe("recovery shape — FR-9.1", () => {
+  /**
+   * Added after a live browser run, not from reasoning.
+   *
+   * The original recovery test asserted only that things were healthy 180 seconds
+   * after a rollback, which any implementation passes — including one where recovery
+   * is instantaneous. FR-9.1 says no action produces instant recovery, so the test has
+   * to assert the *shape* of the curve, not its endpoint.
+   */
+  function recoveryCurve(seed: number): { peakP99: number; secondsToHealthy: number; samples: number[] } {
+    const engine = degraded(120, seed);
+    const peakP99 = engine.health("checkout-service")!.p99;
+
+    engine.rollback("checkout-service", "human");
+
+    const samples: number[] = [];
+    let secondsToHealthy = -1;
+
+    for (let elapsed = 1; elapsed <= 60; elapsed += 1) {
+      engine.advanceSeconds(1);
+      const point = engine.health("checkout-service")!;
+      samples.push(point.p99);
+      if (
+        secondsToHealthy < 0 &&
+        point.p99 <= RECOVERY_P99_MS &&
+        point.errorRate <= RECOVERY_ERROR_RATE
+      ) {
+        secondsToHealthy = elapsed;
+      }
+    }
+
+    return { peakP99, secondsToHealthy, samples };
+  }
+
+  it("does not snap from broken to healthy in a single second", () => {
+    const { secondsToHealthy } = recoveryCurve(42);
+
+    // The rollback is a rolling restart: capacity returns progressively, so there is
+    // always at least one second of the world being neither broken nor well.
+    expect(secondsToHealthy).toBeGreaterThan(1);
+  });
+
+  it("passes through a measurable intermediate state", () => {
+    const { peakP99, samples } = recoveryCurve(42);
+
+    const between = samples.filter((p99) => p99 > RECOVERY_P99_MS && p99 < peakP99 * 0.9);
+    expect(between.length).toBeGreaterThan(0);
+  });
+
+  it("recovers on the same trajectory whatever the seed", () => {
+    // Guards against a recovery that only looks gradual because of one lucky seed.
+    for (const seed of [1, 42, 7, 20260904]) {
+      const { secondsToHealthy } = recoveryCurve(seed);
+      expect(secondsToHealthy).toBeGreaterThan(1);
+      expect(secondsToHealthy).toBeLessThan(60);
+    }
   });
 });
 
