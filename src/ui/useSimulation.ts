@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { Engine, type ServiceName } from "../engine";
-import { HEALTHY_WINDOW_MS, TICK_MS, type SpeedMultiplier } from "../engine/constants";
+import { TICK_MS, type SpeedMultiplier } from "../engine/constants";
+import type { AuditEntry } from "../mcp/audit";
+import { notifySession, onSessionChange, resetSession, session } from "../session";
 
 /**
  * The driver that turns real time into simulated time.
@@ -8,16 +10,12 @@ import { HEALTHY_WINDOW_MS, TICK_MS, type SpeedMultiplier } from "../engine/cons
  * Wall-clock time is legitimate here and nowhere in the engine (FR-3.1). This module
  * decides *how many* fixed-size ticks to run; it never decides how large a tick is, so
  * a run at 60x produces exactly the evidence a run at 1x produces (FR-3.4, FR-3.4a).
+ *
+ * The engine itself is owned by `session`, not by this hook. Tools are registered before
+ * the first render and resolve the engine at call time, so a reset swaps the world for
+ * the interface and the agent together — a hook-owned engine would leave tool handlers
+ * reading a world the human can no longer see.
  */
-
-/**
- * FR-5.1: the environment runs healthy for a fixed opening window, then the scenario begins
- * on its own. The schedule belongs to the engine, which checks it after every tick — checking
- * once per frame instead would start the scenario up to 300 ticks late at 60x.
- */
-function newEngine(): Engine {
-  return new Engine(undefined, { autoStart: { id: "s1", atMs: HEALTHY_WINDOW_MS } });
-}
 
 /** Ceiling on ticks per frame, so a backgrounded tab does not death-spiral on return. */
 const MAX_TICKS_PER_FRAME = 300;
@@ -25,18 +23,7 @@ const MAX_TICKS_PER_FRAME = 300;
 /** The UI repaints at this rate regardless of tick rate — 60x must not mean 240 renders. */
 const RENDER_INTERVAL_MS = 90;
 
-export interface AuditEntry {
-  id: number;
-  simMs: number;
-  /** FR-13.1a: a dashboard click is a ui_action, never a tool invocation. */
-  kind: "ui_action";
-  source: "ui";
-  actor: "human";
-  operation: string;
-  detail: string;
-  result: string;
-  ok: boolean;
-}
+export type { AuditEntry };
 
 export interface Simulation {
   engine: Engine;
@@ -50,40 +37,42 @@ export interface Simulation {
   scenarioPending: boolean;
   rollback(service: ServiceName): void;
   setStatus(status: "investigating" | "identified" | "mitigating" | "resolved"): void;
-  audit: AuditEntry[];
+  audit: readonly AuditEntry[];
 }
 
 export function useSimulation(): Simulation {
-  const engineRef = useRef<Engine | null>(null);
-  if (engineRef.current === null) engineRef.current = newEngine();
-
   const [speed, setSpeed] = useState<SpeedMultiplier>(10);
-  const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [version, repaint] = useReducer((n: number) => n + 1, 0);
 
   const speedRef = useRef(speed);
   speedRef.current = speed;
 
-  const auditId = useRef(0);
+  /*
+   * Tool calls arrive from outside React and mutate the same trail the interface renders,
+   * so the log is read through an external store rather than component state. Without
+   * this the activity log would sit empty while an agent worked.
+   */
+  const current = useSyncExternalStore(onSessionChange, session, session);
 
+  useEffect(() => onSessionChange(repaint), []);
+
+  /** FR-13.1a — a dashboard click is a `ui_action`, never a tool call. */
   const record = useCallback(
-    (operation: string, detail: string, result: string, ok: boolean) => {
-      const engine = engineRef.current!;
-      auditId.current += 1;
-      setAudit((entries) => [
-        ...entries,
-        {
-          id: auditId.current,
-          simMs: engine.world.nowMs,
-          kind: "ui_action",
-          source: "ui",
-          actor: "human",
-          operation,
-          detail,
-          result,
-          ok,
-        },
-      ]);
+    (operation: string, args: string, summary: string, ok: boolean, sideEffect: "A" | "C") => {
+      const { engine, audit } = session();
+      audit.add({
+        timestamp: engine.world.nowMs,
+        kind: "ui_action",
+        operation,
+        source: "ui",
+        actor: "human",
+        arguments: args,
+        result_summary: summary,
+        duration_ms: 0,
+        status: ok ? "ok" : "refused",
+        side_effect_class: sideEffect,
+      });
+      notifySession();
     },
     [],
   );
@@ -97,7 +86,7 @@ export function useSimulation(): Simulation {
     const loop = (now: number) => {
       frame = requestAnimationFrame(loop);
 
-      const engine = engineRef.current!;
+      const { engine } = session();
       const elapsed = now - previous;
       previous = now;
 
@@ -118,23 +107,22 @@ export function useSimulation(): Simulation {
   }, []);
 
   const reset = useCallback(() => {
-    engineRef.current = newEngine();
-    auditId.current = 0;
-    setAudit([]);
+    // FR-15.3 — a new world, a new evidence registry and an empty trail. Nothing carries.
+    resetSession();
     repaint();
   }, []);
 
   const triggerScenario = useCallback(() => {
-    const engine = engineRef.current!;
+    const { engine } = session();
     if (!engine.scenarioPending) return;
     engine.startScenario("s1");
-    record("start_scenario", "scenario: s1", "Scenario started immediately", true);
+    record("start_scenario", "scenario: s1", "Scenario started immediately", true, "C");
     repaint();
   }, [record]);
 
   const rollback = useCallback(
     (service: ServiceName) => {
-      const engine = engineRef.current!;
+      const { engine } = session();
 
       /*
        * A human rollback is an applied action like any other: it mints an action_id and
@@ -145,10 +133,9 @@ export function useSimulation(): Simulation {
       record(
         "rollback_deployment",
         `service: ${service}`,
-        applied
-          ? `${applied.summary} (${applied.id})`
-          : `No deployment available to roll back on ${service}`,
+        applied ? `${applied.summary} (${applied.id})` : `No deployment available to roll back on ${service}`,
         applied !== null,
+        "C",
       );
       repaint();
     },
@@ -157,13 +144,14 @@ export function useSimulation(): Simulation {
 
   const setStatus = useCallback(
     (status: "investigating" | "identified" | "mitigating" | "resolved") => {
-      const engine = engineRef.current!;
+      const { engine } = session();
       const result = engine.setIncidentStatus(status, "human");
       record(
         "update_incident_status",
         `status: ${status}`,
         result.ok ? `Incident is now ${status}` : result.error,
         result.ok,
+        "C",
       );
       repaint();
     },
@@ -171,15 +159,15 @@ export function useSimulation(): Simulation {
   );
 
   return {
-    engine: engineRef.current,
+    engine: current.engine,
     version,
     speed,
     setSpeed,
     reset,
     triggerScenario,
-    scenarioPending: engineRef.current.scenarioPending,
+    scenarioPending: current.engine.scenarioPending,
     rollback,
     setStatus,
-    audit,
+    audit: current.audit.all,
   };
 }

@@ -25,7 +25,7 @@ export function IncidentRecord({
   onStatus,
 }: {
   engine: Engine;
-  audit: AuditEntry[];
+  audit: readonly AuditEntry[];
   service: ServiceName;
   onRollback(service: ServiceName): void;
   onStatus(status: ChosenStatus): void;
@@ -150,11 +150,16 @@ export function IncidentRecord({
               .slice()
               .reverse()
               .map((entry) => (
-                <li key={entry.id} className={`event is-human ${entry.ok ? "" : "is-refused"}`}>
-                  <span className="event-time">{shortClock(entry.simMs)}</span>
+                <li
+                  key={entry.id}
+                  className={`event is-${entry.source === "webmcp" ? "agent" : "human"} ${
+                    entry.status === "ok" ? "" : "is-refused"
+                  }`}
+                >
+                  <span className="event-time">{shortClock(entry.timestamp)}</span>
                   <span className="event-actor">{entry.source}</span>
                   <span className="event-message">
-                    <strong>{entry.operation}</strong> {entry.detail} — {entry.result}
+                    <strong>{entry.operation}</strong> {entry.arguments} — {entry.result_summary}
                   </span>
                 </li>
               ))}

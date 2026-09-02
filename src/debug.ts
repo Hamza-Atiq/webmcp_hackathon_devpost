@@ -1,5 +1,8 @@
 import { Engine, SERVICE_NAMES, type ScenarioId } from "./engine";
 import type { ServiceName } from "./engine";
+import type { ToolResult } from "./mcp/contracts";
+import { invokeTool, READ_ONLY_TOOL_NAMES } from "./mcp/register";
+import { session } from "./session";
 
 /**
  * Console harness — the P1 exit criterion.
@@ -35,6 +38,30 @@ export interface ConsoleHarness {
   correlation(): void;
   watch(seconds?: number, step?: number): void;
   arc(): void;
+
+  /**
+   * The twelve read-only tools, invoked against the **live page** — the engine the
+   * dashboard is rendering, not the sandbox above.
+   *
+   * This is verification step 2 of spec 003 §11, and it needs no WebMCP support at all:
+   * the tools are plain functions, so a browser without `document.modelContext` can
+   * still exercise every bound, refusal and evidence rule. What it cannot prove is
+   * registration, which is why the DevTools panel check exists as well.
+   *
+   * Calls made here are recorded as `source: ui` — a human operating the page, not a
+   * tool call that arrived over the API — so the ids they return are deliberately *not*
+   * citable (FR-13.5). Use `callAsAgent` when that is the path you mean to test.
+   */
+  tools: Record<string, (args?: Record<string, unknown>) => ToolResult>;
+
+  /** Invoke a tool down the agent path, so the ids it returns become citable. */
+  callAsAgent(name: string, args?: Record<string, unknown>): ToolResult;
+
+  /** What the live session has shown, to whom. */
+  evidence(): void;
+
+  /** The unified operation trail, and which tools nobody has called (FR-13.4). */
+  trail(): void;
 }
 
 declare global {
@@ -215,8 +242,53 @@ ${r.id} — ${r.title}`);
       );
       console.log("resolve now ->", JSON.stringify(engine.setIncidentStatus("resolved", "human")));
     },
+
+    tools: Object.fromEntries(
+      READ_ONLY_TOOL_NAMES.map((name) => [
+        name,
+        (args: Record<string, unknown> = {}) =>
+          invokeTool(name, args, { source: "ui", actor: "human" }),
+      ]),
+    ),
+
+    callAsAgent(name, args = {}) {
+      return invokeTool(name, args, { source: "webmcp", actor: "agent" });
+    },
+
+    evidence() {
+      console.table(
+        session().evidence.all().map((entry) => ({
+          id: entry.id,
+          source: entry.source,
+          tool: entry.tool,
+          at: `${Math.round(entry.simMs / 1000)}s`,
+          citable: entry.channels.has("webmcp"),
+        })),
+      );
+    },
+
+    trail() {
+      const { audit } = session();
+      console.table(
+        audit.all.map((entry) => ({
+          at: `${Math.round(entry.timestamp / 1000)}s`,
+          kind: entry.kind,
+          operation: entry.operation,
+          source: entry.source,
+          actor: entry.actor,
+          status: entry.status,
+          class: entry.side_effect_class,
+          ms: entry.duration_ms,
+          result: entry.result_summary,
+        })),
+      );
+      console.log("never called:", audit.unused(READ_ONLY_TOOL_NAMES).join(", ") || "none");
+    },
   };
 
   window.agentops = harness;
-  console.log("[agentops] console harness ready. Try: agentops.arc()");
+  console.log(
+    "[agentops] console harness ready. Try: agentops.arc(), " +
+      "agentops.tools.get_incident(), agentops.trail()",
+  );
 }

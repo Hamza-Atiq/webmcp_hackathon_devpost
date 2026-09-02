@@ -22,6 +22,7 @@ export type LogLevel = "debug" | "info" | "warn" | "error";
 
 /** Which evidence source an id came from. FR-7.2 requires two *different* sources. */
 export type EvidenceSource =
+  | "services"
   | "metrics"
   | "logs"
   | "traces"

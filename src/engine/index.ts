@@ -189,9 +189,11 @@ export { actionById, mostRecentAction, recordAction } from "./actions";
 export type { ActionKind, AppliedAction, ServiceSnapshot } from "./actions";
 export type {
   Deployment,
+  EvidenceSource,
   Incident,
   IncidentStatus,
   LogEntry,
+  MetricField,
   MetricPoint,
   ServiceName,
   ServiceState,
