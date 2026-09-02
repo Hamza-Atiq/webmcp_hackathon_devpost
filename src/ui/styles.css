@@ -1115,3 +1115,84 @@ button.record:hover {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* --- Runbooks and ownership -------------------------------------------------
+ * The two reference sources. Deliberately quieter than the observation records:
+ * a runbook is a procedure someone wrote in advance, not something the system is
+ * telling you now, and alarm red stays reserved for an open incident.
+ */
+
+.record.runbook {
+  grid-template-columns: 132px 1fr auto;
+}
+
+.record.runbook .record-main strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.record.own {
+  grid-template-columns: 132px 1fr;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.runbook-body {
+  padding: 4px 14px 14px 14px;
+  border-left: 2px solid var(--amber-dim);
+  margin-left: 14px;
+}
+
+.runbook-steps {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 7px;
+}
+
+.runbook-steps li {
+  font: 400 12px/1.6 var(--sans);
+  color: var(--ink-dim);
+}
+
+.runbook-steps li::marker {
+  color: var(--amber);
+  font: 500 10px var(--mono);
+}
+
+.runbook-signals {
+  margin: 12px 0 0 0;
+  font: 400 10px/1.6 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+.runbook-signals span {
+  color: var(--sage);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.ownership {
+  padding-bottom: 14px;
+}
+
+.own-detail {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  gap: 9px 10px;
+  margin: 14px 14px 0 14px;
+}
+
+.own-detail dt {
+  font: 500 10px/1.5 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-faint);
+}
+
+.own-detail dd {
+  margin: 0;
+  font: 400 12px/1.5 var(--sans);
+  color: var(--ink-dim);
+}

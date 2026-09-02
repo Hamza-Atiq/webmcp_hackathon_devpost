@@ -1,21 +1,28 @@
 import { useState } from "react";
-import type { Engine, ServiceName, Span, Trace } from "../engine";
+import type { Engine, Runbook, ServiceName, Span, Trace } from "../engine";
 import { millis, relativeAge, shortClock } from "./format";
 
 /**
- * Logs, traces and deployments — the three evidence sources a human correlates.
+ * The five evidence sources a human correlates.
  *
  * Each tab shows record ids, because an id is what makes a finding citable rather
  * than a recollection (FR-6.1). The same ids are what the agent's tools return, so a
  * human and an agent can talk about the same record.
+ *
+ * Runbooks and ownership are here because FR-12.3 requires *all* FR-4 evidence to be
+ * browsable with no agent present. They existed in the engine and in the tool layer
+ * before they existed on screen, which meant the agent could read two sources the human
+ * could not — precisely the asymmetry FR-12 exists to forbid.
  */
 
-type Tab = "logs" | "traces" | "deployments";
+type Tab = "logs" | "traces" | "deployments" | "runbooks" | "ownership";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "logs", label: "Logs" },
   { id: "traces", label: "Traces" },
   { id: "deployments", label: "Deployments" },
+  { id: "runbooks", label: "Runbooks" },
+  { id: "ownership", label: "Ownership" },
 ];
 
 function Waterfall({ span, rootDuration, depth = 0 }: { span: Span; rootDuration: number; depth?: number }) {
@@ -76,6 +83,50 @@ function TraceList({ traces }: { traces: Trace[] }) {
   );
 }
 
+function RunbookList({ runbooks }: { runbooks: Runbook[] }) {
+  const [open, setOpen] = useState<string | null>(null);
+
+  if (runbooks.length === 0) {
+    return <p className="empty">No runbook matches that search. Clear it to see the whole library.</p>;
+  }
+
+  return (
+    <ul className="records">
+      {runbooks.map((runbook) => (
+        <li key={runbook.id}>
+          <button
+            type="button"
+            className="record runbook"
+            onClick={() => setOpen(open === runbook.id ? null : runbook.id)}
+            aria-expanded={open === runbook.id}
+          >
+            <span className="record-id">{runbook.id}</span>
+            <span className="record-main">
+              <strong>{runbook.title}</strong>
+            </span>
+            <span className="record-tail">
+              {runbook.appliesTo === "any" ? "any service" : runbook.appliesTo.join(", ")}
+            </span>
+          </button>
+
+          {open === runbook.id && (
+            <div className="runbook-body">
+              <ol className="runbook-steps">
+                {runbook.steps.map((step, i) => (
+                  <li key={i}>{step}</li>
+                ))}
+              </ol>
+              <p className="runbook-signals">
+                Signals to pull: <span>{runbook.signals.join(", ")}</span>
+              </p>
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function EvidenceTabs({ engine, service }: { engine: Engine; service: ServiceName }) {
   const [tab, setTab] = useState<Tab>("logs");
   const [query, setQuery] = useState("");
@@ -98,6 +149,15 @@ export function EvidenceTabs({ engine, service }: { engine: Engine; service: Ser
     .filter((d) => d.service === service)
     .sort((a, b) => b.t - a.t);
 
+  /*
+   * The whole library, not only what applies to the selected service. An on-call engineer
+   * browsing runbooks is deciding *which* failure mode they are looking at, and a list
+   * pre-filtered to the service they happen to have highlighted would answer that question
+   * for them.
+   */
+  const runbooks = engine.runbooks(query || undefined);
+  const owner = engine.ownership(service);
+
   return (
     <section className="evidence">
       <header className="evidence-head">
@@ -118,7 +178,7 @@ export function EvidenceTabs({ engine, service }: { engine: Engine; service: Ser
 
         <span className="evidence-spacer" />
 
-        {tab !== "deployments" && (
+        {(tab === "logs" || tab === "traces") && (
           <label className="toggle">
             <input
               type="checkbox"
@@ -129,12 +189,12 @@ export function EvidenceTabs({ engine, service }: { engine: Engine; service: Ser
           </label>
         )}
 
-        {tab === "logs" && (
+        {(tab === "logs" || tab === "runbooks") && (
           <input
             className="search"
             type="search"
             value={query}
-            placeholder="Filter messages"
+            placeholder={tab === "logs" ? "Filter messages" : "Search by symptom"}
             onChange={(e) => setQuery(e.target.value)}
           />
         )}
@@ -191,6 +251,29 @@ export function EvidenceTabs({ engine, service }: { engine: Engine; service: Ser
               ))}
             </ul>
           ))}
+
+        {tab === "runbooks" && <RunbookList runbooks={runbooks} />}
+
+        {tab === "ownership" && (
+          <div className="ownership">
+            <div className="record own">
+              <span className="record-id">{owner.id}</span>
+              <span className="record-main">
+                <strong>{owner.team}</strong> owns {owner.service}
+              </span>
+            </div>
+            <dl className="own-detail">
+              <dt>On call</dt>
+              <dd>{owner.onCall}</dd>
+              <dt>Escalation</dt>
+              <dd>{owner.escalation}</dd>
+              <dt>Channel</dt>
+              <dd>{owner.channel}</dd>
+              <dt>Paging policy</dt>
+              <dd>{owner.policy}</dd>
+            </dl>
+          </div>
+        )}
       </div>
     </section>
   );
