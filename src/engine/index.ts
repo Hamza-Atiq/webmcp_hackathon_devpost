@@ -105,10 +105,15 @@ export class Engine {
 export { SERVICE_NAMES } from "./world";
 export { classifySeverity, isBreaching, isRecovered, STATUS_ORDER } from "./incident";
 export type {
+  Deployment,
   Incident,
   IncidentStatus,
+  LogEntry,
   MetricPoint,
   ServiceName,
+  ServiceState,
   Severity,
+  Span,
   TimelineEntry,
+  Trace,
 } from "./types";

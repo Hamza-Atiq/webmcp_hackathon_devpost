@@ -259,9 +259,16 @@ export function evaluateIncident(
 
   if (incident.status === "resolved") return;
 
-  // A service that starts breaching after the incident opened joins it, and stays on
-  // the record afterwards — an incident's blast radius is a history, not a live view.
-  for (const { service } of breaching) {
+  // A service joins an open incident by exactly the test that opens one: a sustained
+  // run of breaching seconds. Admitting it on a single bad second would let one
+  // unlucky latency tail permanently widen the blast radius on the record, and the
+  // postmortem would then report services that were never in trouble.
+  const sustained = breaching.filter(
+    (b) => world.breachSec[b.service] >= INCIDENT_SUSTAIN_SEC,
+  );
+
+  // Once in, a service stays on the record — blast radius is a history, not a live view.
+  for (const { service } of sustained) {
     if (!incident.affectedServices.includes(service)) {
       incident.affectedServices.push(service);
       incident.affectedServices.sort();
@@ -272,7 +279,7 @@ export function evaluateIncident(
   // Severity escalates as things get worse and never quietly de-escalates: an incident
   // that reached SEV-1 was a SEV-1, and downgrading the badge mid-recovery would erase
   // that from the record the postmortem is built from.
-  for (const { service, signals } of breaching) {
+  for (const { service, signals } of sustained) {
     const implied = classifySeverity(signals);
     if (implied && SEVERITY_RANK[implied] > SEVERITY_RANK[incident.severity]) {
       const from = incident.severity;

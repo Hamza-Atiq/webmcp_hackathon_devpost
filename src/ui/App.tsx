@@ -1,36 +1,131 @@
+import { useState } from "react";
+import type { ServiceName } from "../engine";
+import { SPEED_MULTIPLIERS, type SpeedMultiplier } from "../engine/constants";
+import {
+  INCIDENT_ERROR_RATE_THRESHOLD,
+  INCIDENT_P99_THRESHOLD_MS,
+  RECOVERY_P99_MS,
+  SEV2_ERROR_RATE,
+  SEV2_P99_MS,
+} from "../engine/constants";
 import { webmcpAvailable } from "../mcp/register";
+import { useSimulation } from "./useSimulation";
+import { AlarmRail } from "./AlarmRail";
+import { ServiceMap } from "./ServiceMap";
+import { MetricChart } from "./MetricChart";
+import { EvidenceTabs } from "./EvidenceTabs";
+import { IncidentRecord } from "./IncidentRecord";
+import { millis, pct, simClock } from "./format";
+
+/**
+ * Three regions, and the order is the argument the product makes: the environment you
+ * are responsible for, the evidence it is producing, and the record of what anyone did
+ * about it. Investigation sits between the system and the action, never beside it.
+ */
 
 export function App() {
-  const webmcp = webmcpAvailable();
+  const sim = useSimulation();
+  const [service, setService] = useState<ServiceName>("checkout-service");
+
+  const { engine } = sim;
+  const incident = engine.incident;
+  const focus = incident?.openingSignals.service ?? service;
+  const points = engine.store.metrics[service];
 
   return (
     <div className="shell">
       <header className="topbar">
-        <h1>AgentOps Command Center</h1>
+        <h1>AgentOps</h1>
         <span className="tag">Incident Response</span>
-        <span className="spacer" />
+
+        <span className="clock" title="Simulated time since the environment started">
+          {simClock(engine.world.nowMs)}
+        </span>
+
+        <div className="speeds" role="group" aria-label="Simulation speed">
+          {SPEED_MULTIPLIERS.map((multiplier) => (
+            <button
+              key={multiplier}
+              type="button"
+              className={`speed ${sim.speed === multiplier ? "is-active" : ""}`}
+              aria-pressed={sim.speed === multiplier}
+              onClick={() => sim.setSpeed(multiplier as SpeedMultiplier)}
+            >
+              {multiplier}×
+            </button>
+          ))}
+        </div>
+
+        <button type="button" className="ghost" onClick={sim.reset}>
+          Reset environment
+        </button>
+
+        <span className="topbar-spacer" />
+
         <span className="pill">
-          <span className={`dot ${webmcp ? "on" : "off"}`} />
-          {webmcp ? "WebMCP detected" : "WebMCP unavailable"}
+          <span className={`dot ${webmcpAvailable() ? "on" : "off"}`} />
+          {webmcpAvailable() ? "WebMCP connected" : "WebMCP unavailable"}
         </span>
       </header>
 
-      <main className="stage">
-        <div className="placeholder">
-          <h2>Simulation engine not yet wired</h2>
-          <p>
-            Deployment skeleton is live. The simulated production environment, the evidence
-            sources and the WebMCP tool layer land in the phases that follow.
-          </p>
-          <p>
-            {webmcp
-              ? "This browser exposes document.modelContext — site tools will be discoverable here."
-              : "No WebMCP support in this browser. The console remains fully usable by a human."}
-          </p>
-          <p>
-            <code>chrome://flags/#enable-webmcp-testing</code>
-          </p>
-        </div>
+      <AlarmRail incident={incident} point={engine.health(focus)} serviceLabel={focus} />
+
+      <main className="regions">
+        <section className="region region-environment">
+          <h2 className="region-head">
+            Environment
+            <span className="region-note">5 services</span>
+          </h2>
+          <ServiceMap engine={engine} selected={service} onSelect={setService} />
+        </section>
+
+        <section className="region region-evidence">
+          <h2 className="region-head">
+            Evidence
+            <span className="region-note">{service}</span>
+          </h2>
+
+          <div className="charts">
+            <MetricChart
+              points={points}
+              field="p99"
+              title="Latency p99"
+              format={millis}
+              floor={RECOVERY_P99_MS}
+              thresholds={[
+                { value: INCIDENT_P99_THRESHOLD_MS, label: "opens" },
+                { value: SEV2_P99_MS, label: "SEV-2" },
+              ]}
+            />
+            <MetricChart
+              points={points}
+              field="errorRate"
+              title="Error rate"
+              format={(v) => pct(v, 1)}
+              floor={0.04}
+              thresholds={[
+                { value: INCIDENT_ERROR_RATE_THRESHOLD, label: "opens" },
+                { value: SEV2_ERROR_RATE, label: "SEV-2" },
+              ]}
+            />
+          </div>
+
+          <EvidenceTabs engine={engine} service={service} />
+        </section>
+
+        <section className="region region-record">
+          <h2 className="region-head">
+            Record
+            <span className="region-note">human · no agent required</span>
+          </h2>
+          <IncidentRecord
+            engine={engine}
+            audit={sim.audit}
+            service={service}
+            onRollback={sim.rollback}
+            onStatus={sim.setStatus}
+          />
+        </section>
       </main>
     </div>
   );

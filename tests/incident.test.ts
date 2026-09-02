@@ -130,6 +130,17 @@ describe("incident detection", () => {
     expect(incident.title).toContain("checkout-service");
   });
 
+  it("does not widen the blast radius on a single unlucky second", () => {
+    // Caught in the browser, not in a test: user-service appeared under "affected"
+    // while sitting at 0.8% errors, because one latency-tail second was enough to
+    // enrol it. A service joins an incident by the same sustained-breach test that
+    // opens one.
+    for (const seed of [1, 42, 7, 20260904]) {
+      const engine = degraded(300, seed);
+      expect(engine.incident!.affectedServices).toEqual(["checkout-service"]);
+    }
+  });
+
   it("opens exactly one incident, however long the degradation runs", () => {
     const engine = degraded(400);
     expect(engine.world.counters["inc"]).toBe(1);
