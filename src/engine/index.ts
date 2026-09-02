@@ -5,7 +5,8 @@ import { createSim, tick, type Sim } from "./sim";
 import { addTimelineEntry, setIncidentStatus } from "./incident";
 import { findRunbooks, runbookById, type Runbook } from "./runbooks";
 import { ownershipFor, type Ownership } from "./ownership";
-import { onset as s1Onset, seedHistory as s1SeedHistory } from "./scenarios/s1";
+import { seedBaselineHistory } from "./deployments";
+import { onset as s1Onset } from "./scenarios/s1";
 import type { Incident, IncidentStatus, MetricPoint, ServiceName, TimelineEntry } from "./types";
 
 /**
@@ -18,21 +19,49 @@ import type { Incident, IncidentStatus, MetricPoint, ServiceName, TimelineEntry 
 
 export type ScenarioId = "s1";
 
+export interface EngineOptions {
+  /**
+   * Start a scenario automatically once the simulated clock reaches `atMs` (FR-5.1).
+   *
+   * Owned by the engine rather than by the render loop, and checked after every single
+   * tick. The driver decides how many ticks a frame consumes, so a check made once per
+   * frame would fire up to 300 ticks late at 60x and the scenario would begin at a
+   * different simulated moment depending on the speed — breaking FR-3.4 outright.
+   * Inside the tick loop the onset lands on the same tick at every speed.
+   */
+  autoStart?: { id: ScenarioId; atMs: number };
+}
+
 export class Engine {
   readonly world: World;
   readonly store: Store;
   private readonly sim: Sim;
+  private pending: { id: ScenarioId; atMs: number } | null;
 
-  constructor(seed = 20260904) {
+  constructor(seed = 20260904, options: EngineOptions = {}) {
     this.world = createWorld(seed);
     this.store = createStore();
     this.sim = createSim(this.world, this.store);
-    s1SeedHistory(this.world);
+    this.pending = options.autoStart ?? null;
+    seedBaselineHistory(this.world);
   }
 
   /** Advance the world by whole ticks. The only way simulated time moves. */
   advanceTicks(n: number): void {
-    for (let i = 0; i < n; i++) tick(this.sim);
+    for (let i = 0; i < n; i++) {
+      tick(this.sim);
+
+      if (this.pending && this.world.nowMs >= this.pending.atMs) {
+        const { id } = this.pending;
+        this.pending = null;
+        this.startScenario(id);
+      }
+    }
+  }
+
+  /** Is a scenario still waiting to begin on its own? Drives the manual trigger's label. */
+  get scenarioPending(): boolean {
+    return this.pending !== null;
   }
 
   /** Convenience for tests and for the healthy warm-up window. */
@@ -40,7 +69,14 @@ export class Engine {
     this.advanceTicks(Math.round(seconds * TICKS_PER_SIM_SECOND));
   }
 
+  /**
+   * Begin a scenario now, cancelling any scheduled start — FR-5.2.
+   *
+   * The manual trigger and the automatic onset run the same code path, so a judge who
+   * skips the wait sees exactly the incident that would have arrived anyway.
+   */
   startScenario(id: ScenarioId): void {
+    this.pending = null;
     if (id === "s1") s1Onset(this.world);
   }
 

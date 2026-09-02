@@ -10,6 +10,15 @@ import { HEALTHY_WINDOW_MS, TICK_MS, type SpeedMultiplier } from "../engine/cons
  * a run at 60x produces exactly the evidence a run at 1x produces (FR-3.4, FR-3.4a).
  */
 
+/**
+ * FR-5.1: the environment runs healthy for a fixed opening window, then the scenario begins
+ * on its own. The schedule belongs to the engine, which checks it after every tick — checking
+ * once per frame instead would start the scenario up to 300 ticks late at 60x.
+ */
+function newEngine(): Engine {
+  return new Engine(undefined, { autoStart: { id: "s1", atMs: HEALTHY_WINDOW_MS } });
+}
+
 /** Ceiling on ticks per frame, so a backgrounded tab does not death-spiral on return. */
 const MAX_TICKS_PER_FRAME = 300;
 
@@ -36,6 +45,9 @@ export interface Simulation {
   speed: SpeedMultiplier;
   setSpeed(speed: SpeedMultiplier): void;
   reset(): void;
+  /** FR-5.2 — begin the scenario immediately instead of waiting out the healthy window. */
+  triggerScenario(): void;
+  scenarioPending: boolean;
   rollback(service: ServiceName): void;
   setStatus(status: "investigating" | "identified" | "mitigating" | "resolved"): void;
   audit: AuditEntry[];
@@ -43,7 +55,7 @@ export interface Simulation {
 
 export function useSimulation(): Simulation {
   const engineRef = useRef<Engine | null>(null);
-  if (engineRef.current === null) engineRef.current = new Engine();
+  if (engineRef.current === null) engineRef.current = newEngine();
 
   const [speed, setSpeed] = useState<SpeedMultiplier>(10);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
@@ -52,7 +64,6 @@ export function useSimulation(): Simulation {
   const speedRef = useRef(speed);
   speedRef.current = speed;
 
-  const scenarioStarted = useRef(false);
   const auditId = useRef(0);
 
   const record = useCallback(
@@ -94,17 +105,7 @@ export function useSimulation(): Simulation {
       const ticks = Math.min(MAX_TICKS_PER_FRAME, Math.floor(simMs / TICK_MS));
       carry = simMs - ticks * TICK_MS;
 
-      if (ticks > 0) {
-        engine.advanceTicks(ticks);
-
-        // FR-5.1: the environment is healthy for a fixed opening window, then the
-        // scenario begins on its own. Keyed to simulated time rather than wall-clock,
-        // so the onset lands on the same tick at every speed.
-        if (!scenarioStarted.current && engine.world.nowMs >= HEALTHY_WINDOW_MS) {
-          scenarioStarted.current = true;
-          engine.startScenario("s1");
-        }
-      }
+      if (ticks > 0) engine.advanceTicks(ticks);
 
       if (now - lastRender >= RENDER_INTERVAL_MS) {
         lastRender = now;
@@ -117,12 +118,19 @@ export function useSimulation(): Simulation {
   }, []);
 
   const reset = useCallback(() => {
-    engineRef.current = new Engine();
-    scenarioStarted.current = false;
+    engineRef.current = newEngine();
     auditId.current = 0;
     setAudit([]);
     repaint();
   }, []);
+
+  const triggerScenario = useCallback(() => {
+    const engine = engineRef.current!;
+    if (!engine.scenarioPending) return;
+    engine.startScenario("s1");
+    record("start_scenario", "scenario: s1", "Scenario started immediately", true);
+    repaint();
+  }, [record]);
 
   const rollback = useCallback(
     (service: ServiceName) => {
@@ -166,6 +174,8 @@ export function useSimulation(): Simulation {
     speed,
     setSpeed,
     reset,
+    triggerScenario,
+    scenarioPending: engineRef.current.scenarioPending,
     rollback,
     setStatus,
     audit,

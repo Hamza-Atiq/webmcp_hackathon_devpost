@@ -16,33 +16,6 @@ import { nextId, scheduleConfigChange, type World } from "../world";
 
 export const SCENARIO_1_ID = "s1";
 
-/** Deployment history that exists before the incident, so rollback always has a target (FR-2.4a). */
-export function seedHistory(world: World): void {
-  world.deployments.push({
-    id: nextId(world, "dep"),
-    t: -6 * 60 * 60 * 1000,
-    service: "checkout-service",
-    version: "v2.4.0",
-    previousVersion: "v2.3.8",
-    author: "priya.raman",
-    diff: [{ key: "CHECKOUT_RETRY_BACKOFF_MS", from: "100", to: "150" }],
-    summary: "Increase retry backoff on payment calls",
-    rolledBack: false,
-  });
-
-  world.deployments.push({
-    id: nextId(world, "dep"),
-    t: -3 * 60 * 60 * 1000,
-    service: "user-service",
-    version: "v1.9.2",
-    previousVersion: "v1.9.1",
-    author: "tom.becker",
-    diff: [{ key: "SESSION_CACHE_TTL_S", from: "300", to: "600" }],
-    summary: "Extend session cache TTL",
-    rolledBack: false,
-  });
-}
-
 export function onset(world: World): void {
   world.deployments.push({
     id: nextId(world, "dep"),

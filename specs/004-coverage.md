@@ -182,6 +182,11 @@ Recorded here because calibration changes what a judge sees, and the product own
 
 | Change | Why | Status |
 |---|---|---|
-| Trace sampling cut to 0.2% of successes with a 4/second cap on error traces; buffer raised to 3000 | 96% of log correlation ids pointed at evicted traces | **awaiting sign-off** |
-| Correlated error logs cut to 1/service/second; routine background 500s no longer logged | correlated failures were 853 of 991 log lines and buried the pool evidence | **awaiting sign-off** |
-| Default clock speed 10x rather than 1x | at 1x the incident opens 80 seconds after load, which is too slow for a 3-minute demo | **awaiting sign-off** |
+| Trace sampling cut to 0.2% of successes with a 4/second cap on error traces; buffer raised to 3000 | 96% of log correlation ids pointed at evicted traces | **approved 2 Sept 2026** |
+| Correlated error logs cut to 1/service/second; routine background 500s no longer logged | correlated failures were 853 of 991 log lines and buried the pool evidence | **approved 2 Sept 2026** |
+| Default clock speed 10x rather than 1x | at 1x the incident opens 80 seconds after load, which is too slow for a 3-minute demo | **approved 2 Sept 2026** |
+
+The trace decision was taken deliberately over the alternative of holding 20,000+ traces so that no
+citation ever expires. Sampling keeps browser memory bounded, matches how observability actually
+works, and leaves an aged-out citation as a real path the tools handle explicitly rather than a
+case that never occurs.
