@@ -179,6 +179,18 @@ describe("refusals are instructive — spec 003 §4, FR-14.5", () => {
     if (!neverExisted.ok) expect(neverExisted.error).toContain("Unknown trace id");
   });
 
+  it("returns the most specific runbook first, because bounding may show only one", () => {
+    /*
+     * "database latency" matches the pool runbook by an exact symptom and the general
+     * latency procedure by a substring. In library order the general one came first and
+     * bounding then dropped the better answer, so the precise procedure existed and was
+     * unreachable — found by calling the tool on the live page, not by a test.
+     */
+    const result = expectOk(tools.getRunbook(engine, { symptom: "database latency" }));
+    const returned = (result.data as { runbooks: Array<{ id: string }> }).runbooks;
+    expect(returned[0]!.id).toBe("rb_pool_exhaustion");
+  });
+
   it("refuses an unknown action_id with the list of real ones", () => {
     const withAction = investigating();
     withAction.rollback("checkout-service", "human");

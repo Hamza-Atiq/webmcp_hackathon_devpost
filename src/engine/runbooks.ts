@@ -131,6 +131,29 @@ export const RUNBOOKS: Runbook[] = [
  * agent should be able to predict what a query will return, and a fuzzy ranker that silently
  * reorders results would make the evidence trail harder to reason about, not easier.
  */
+/**
+ * How well a runbook answers a query — specific matches beat general ones.
+ *
+ * Ranking is load-bearing rather than a nicety. A caller asking about "database latency"
+ * matches both the pool runbook, whose symptom list contains that exact phrase, and the
+ * general latency procedure, whose symptom "latency" is merely a substring of the query.
+ * Returned in library order the general one came first, and because a tool response is
+ * bounded to what fits, it was often the *only* one the caller saw — so the more precise
+ * procedure existed and was unreachable. Specificity is scored by how much of the matched
+ * symptom the query actually accounts for.
+ */
+function relevance(runbook: Runbook, needle: string): number {
+  let best = 0;
+  for (const symptom of runbook.symptoms) {
+    const s = symptom.toLowerCase();
+    if (s === needle) best = Math.max(best, needle.length + 20);
+    else if (s.includes(needle)) best = Math.max(best, needle.length);
+    else if (needle.includes(s)) best = Math.max(best, s.length);
+  }
+  if (runbook.title.toLowerCase().includes(needle)) best = Math.max(best, needle.length + 10);
+  return best;
+}
+
 export function findRunbooks(query?: string, service?: ServiceName): Runbook[] {
   const needle = query?.trim().toLowerCase();
 
@@ -139,12 +162,8 @@ export function findRunbooks(query?: string, service?: ServiceName): Runbook[] {
       return false;
     }
     if (!needle) return true;
-
-    return (
-      runbook.title.toLowerCase().includes(needle) ||
-      runbook.symptoms.some((s) => s.includes(needle) || needle.includes(s))
-    );
-  });
+    return relevance(runbook, needle) > 0;
+  }).sort((a, b) => (needle ? relevance(b, needle) - relevance(a, needle) : 0));
 
   // A query that matches nothing still returns the general procedure: an on-call engineer with an
   // unrecognised symptom needs a starting point, not an empty result.

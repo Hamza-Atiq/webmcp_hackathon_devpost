@@ -172,10 +172,24 @@ The algorithm, in order:
 
 1. Apply the tool's record cap from the FR-0 table (`search_logs` 20 default / 50 max, and so on).
 2. Serialise. If under 1500 characters, return.
-3. Drop optional fields in a fixed, documented order — trace span children beyond depth 2, then log
-   `correlationId`, then deployment `summary` — and re-serialise.
+3. Drop optional fields in a fixed, documented order — trace span children beyond depth 2, then
+   deployment `summary` — and re-serialise.
 4. If still over 1500, reduce the record count until it fits.
 5. Set `truncated: true`, `returned_count`, `total_count`, and `narrow_by`.
+
+**Correction, 2 September 2026: `correlationId` was on that list and has been removed from it.**
+An earlier draft dropped it second, before reducing the record count. Measured on the live page,
+that meant an ordinary `search_logs` call — ten error lines from one service — exceeded the target
+and came back with the correlation id stripped from *every* row, while a call for three lines kept
+them. The field is not decoration: it is the only link between logs and traces, and FR-4.8 exists
+to make an agent cross exactly that boundary. Dropping it first turned the most natural call into
+a dead end and left the two-source path reachable only by an agent that happened to ask for fewer
+lines than it wanted.
+
+So `correlationId` is not an optional field, and bounding reduces the record count instead.
+**Four log lines that can be followed beat seven that lead nowhere.** Records are still dropped
+whole and the count is still reported; what changed is which of the two an over-long response
+gives up first.
 
 **Never truncate a record part-way.** A half-serialised log line is worse than a missing one: it
 invites a model to reason from a fragment. Records are dropped whole, and the count is reported.

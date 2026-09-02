@@ -17,10 +17,25 @@ import { notifySession, onSessionChange, resetSession, session } from "../sessio
  * reading a world the human can no longer see.
  */
 
-/** Ceiling on ticks per frame, so a backgrounded tab does not death-spiral on return. */
-const MAX_TICKS_PER_FRAME = 300;
+/** Ceiling on ticks per step, so a long-hidden tab does not death-spiral on return. */
+const MAX_TICKS_PER_STEP = 300;
 
-/** The UI repaints at this rate regardless of tick rate — 60x must not mean 240 renders. */
+/**
+ * How often the driver runs. Also the repaint rate — 60x must not mean 240 renders.
+ *
+ * A timer rather than `requestAnimationFrame`, and this is not a stylistic choice.
+ * Chrome throttles rAF in a hidden tab to *nothing*: the simulated clock stops dead and
+ * every tool returns the same frozen numbers. That was invisible to the tests and to any
+ * check made with the page in front of you, and it was found by driving the tools from
+ * an automated browser tab, where `document.hidden` is true.
+ *
+ * It matters because an agent may well be operating a page nobody is looking at — which
+ * is precisely the ChatGPT in-app browser case this has to work in. A hidden tab throttles
+ * timers to about one call a second, so the environment keeps running and simply advances
+ * in larger batches. That is exactly what the driver is allowed to vary (FR-3.4): batch
+ * size changes the rate, never the values, and the engine checks the scenario schedule
+ * after every tick rather than after a batch.
+ */
 const RENDER_INTERVAL_MS = 90;
 
 export type { AuditEntry };
@@ -78,32 +93,27 @@ export function useSimulation(): Simulation {
   );
 
   useEffect(() => {
-    let frame = 0;
     let previous = performance.now();
-    let lastRender = 0;
     let carry = 0;
 
-    const loop = (now: number) => {
-      frame = requestAnimationFrame(loop);
-
+    const step = () => {
       const { engine } = session();
+      const now = performance.now();
       const elapsed = now - previous;
       previous = now;
 
       const simMs = elapsed * speedRef.current + carry;
-      const ticks = Math.min(MAX_TICKS_PER_FRAME, Math.floor(simMs / TICK_MS));
+      const ticks = Math.min(MAX_TICKS_PER_STEP, Math.floor(simMs / TICK_MS));
       carry = simMs - ticks * TICK_MS;
 
-      if (ticks > 0) engine.advanceTicks(ticks);
-
-      if (now - lastRender >= RENDER_INTERVAL_MS) {
-        lastRender = now;
+      if (ticks > 0) {
+        engine.advanceTicks(ticks);
         repaint();
       }
     };
 
-    frame = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(frame);
+    const timer = setInterval(step, RENDER_INTERVAL_MS);
+    return () => clearInterval(timer);
   }, []);
 
   const reset = useCallback(() => {
