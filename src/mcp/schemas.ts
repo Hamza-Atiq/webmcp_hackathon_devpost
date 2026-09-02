@@ -32,7 +32,7 @@ export interface ToolDeclaration {
   title: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  annotations: { readOnlyHint: true; untrustedContentHint?: true };
+  annotations: { readOnlyHint: boolean; untrustedContentHint?: true };
 }
 
 /** FR-0 Class A: reads only. Every tool here declares `readOnlyHint`. */
@@ -247,4 +247,95 @@ export const READ_ONLY_TOOLS = [
   },
 ] as const satisfies readonly ToolDeclaration[];
 
+/**
+ * The two tools that change something — FR-7, FR-8, FR-9.
+ *
+ * `execute_remediation` is the only Class C tool in the system, and its description says
+ * plainly that it blocks on a person. An agent that does not know the call will pause has
+ * no way to reason about why it is waiting, and would be liable to abandon or retry it —
+ * which is the difference between a gate and an obstruction.
+ */
+export const WRITE_TOOLS = [
+  {
+    name: "propose_remediation",
+    title: "Propose a remediation",
+    description:
+      "Put a diagnosis and a proposed action in front of the human operator, citing the evidence " +
+      "that supports it. Proposing changes nothing and is never gated — but a proposal is rejected " +
+      "unless it cites at least two evidence ids from at least two different kinds of evidence, " +
+      "each one actually returned to you in this run. One reading is a coincidence. This is how " +
+      "you turn an investigation into something a person can act on.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hypothesis: {
+          type: "string",
+          description:
+            "What you believe is happening and why, in your own words. Shown to the human; it is " +
+            "not used to decide anything.",
+        },
+        service: SERVICE_ENUM,
+        action: {
+          type: "string",
+          enum: [
+            "rollback_deployment",
+            "restart_service",
+            "scale_replicas",
+            "disable_feature_flag",
+            "shift_traffic",
+          ],
+          description: "The remediation to apply if a human approves it.",
+        },
+        parameters: {
+          type: "object",
+          description:
+            "Action parameters: replicas (scale_replicas), flag (disable_feature_flag), " +
+            "fraction (shift_traffic). Out-of-range values are clamped.",
+          properties: {
+            replicas: { type: "number" },
+            flag: { type: "string" },
+            fraction: { type: "number" },
+          },
+          additionalProperties: false,
+        },
+        evidence_ids: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            'Ids returned to you by read-only tools in this run, such as ["log_0350", "dep_0006"].',
+        },
+      },
+      required: ["hypothesis", "service", "action", "evidence_ids"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false },
+  },
+  {
+    name: "execute_remediation",
+    title: "Execute an approved remediation",
+    description:
+      "Ask a human to approve a proposal, and apply it if they do. **This call blocks until a " +
+      "person decides** — approve, deny, or 60 seconds pass — so expect it to take time, and do " +
+      "not retry it while it is pending. It is the only way anything you do can change the " +
+      "environment, and nothing changes without that person's click. A denial comes back with " +
+      "their reason; read it rather than proposing the same thing again.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        proposal_id: {
+          type: "string",
+          description: 'A proposal id from propose_remediation, such as "prop_0001".',
+        },
+      },
+      required: ["proposal_id"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false },
+  },
+] as const satisfies readonly ToolDeclaration[];
+
+export const ALL_TOOLS = [...READ_ONLY_TOOLS, ...WRITE_TOOLS];
+
 export type ReadOnlyToolName = (typeof READ_ONLY_TOOLS)[number]["name"];
+export type WriteToolName = (typeof WRITE_TOOLS)[number]["name"];
+export type ToolName = ReadOnlyToolName | WriteToolName;

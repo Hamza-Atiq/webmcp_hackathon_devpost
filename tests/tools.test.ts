@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { Engine } from "../src/engine";
 import { SIZE_CEILING, SIZE_TARGET } from "../src/mcp/bounded";
 import { toText, type ToolResult } from "../src/mcp/contracts";
-import { READ_ONLY_TOOLS } from "../src/mcp/schemas";
-import { invokeTool, READ_ONLY_TOOL_NAMES } from "../src/mcp/register";
+import { ALL_TOOLS, READ_ONLY_TOOLS } from "../src/mcp/schemas";
+import { invokeTool, TOOL_NAMES } from "../src/mcp/register";
 import { resetSession, session } from "../src/session";
 import * as tools from "../src/mcp/tools/readonly";
 
@@ -278,9 +278,9 @@ describe("the trail and the registry — FR-13", () => {
     session().engine.advanceSeconds(180);
   });
 
-  it("makes ids citable only when they were returned over WebMCP — FR-13.5", () => {
-    const browsed = invokeTool("get_incident", {}, { source: "ui", actor: "human" });
-    const fetched = invokeTool("list_services", {}, { source: "webmcp", actor: "agent" });
+  it("makes ids citable only when they were returned over WebMCP — FR-13.5", async () => {
+    const browsed = await invokeTool("get_incident", {}, { source: "ui", actor: "human" });
+    const fetched = await invokeTool("list_services", {}, { source: "webmcp", actor: "agent" });
     expect(browsed.ok && fetched.ok).toBe(true);
     if (!browsed.ok || !fetched.ok) return;
 
@@ -290,8 +290,8 @@ describe("the trail and the registry — FR-13", () => {
     expect(evidence.citable(browsed.evidence_ids[0]!)).toBe(false);
   });
 
-  it("counts two ids of the same kind as one source — FR-4.8", () => {
-    const logs = invokeTool("search_logs", { limit: 5 }, { source: "webmcp", actor: "agent" });
+  it("counts two ids of the same kind as one source — FR-4.8", async () => {
+    const logs = await invokeTool("search_logs", { limit: 5 }, { source: "webmcp", actor: "agent" });
     expect(logs.ok).toBe(true);
     if (!logs.ok) return;
 
@@ -300,8 +300,8 @@ describe("the trail and the registry — FR-13", () => {
     expect([...sources]).toEqual(["logs"]);
   });
 
-  it("records refused calls with their reason rather than dropping them — FR-13.3", () => {
-    invokeTool("get_service_health", { service: "nope" }, { source: "webmcp", actor: "agent" });
+  it("records refused calls with their reason rather than dropping them — FR-13.3", async () => {
+    await invokeTool("get_service_health", { service: "nope" }, { source: "webmcp", actor: "agent" });
 
     const entry = session().audit.all.at(-1)!;
     expect(entry.status).toBe("refused");
@@ -310,25 +310,25 @@ describe("the trail and the registry — FR-13", () => {
     expect(entry.side_effect_class).toBe("A");
   });
 
-  it("separates how a call arrived from who claims to have made it — FR-13.1a", () => {
-    invokeTool("get_incident", {}, { source: "webmcp", actor: "human" });
+  it("separates how a call arrived from who claims to have made it — FR-13.1a", async () => {
+    await invokeTool("get_incident", {}, { source: "webmcp", actor: "human" });
     const entry = session().audit.all.at(-1)!;
     expect(entry.source).toBe("webmcp");
     expect(entry.actor).toBe("human");
     expect(entry.kind).toBe("tool_call");
   });
 
-  it("reports the tools nobody has called — FR-13.4", () => {
-    invokeTool("get_incident", {}, { source: "webmcp", actor: "agent" });
-    const unused = session().audit.unused(READ_ONLY_TOOL_NAMES);
+  it("reports the tools nobody has called — FR-13.4", async () => {
+    await invokeTool("get_incident", {}, { source: "webmcp", actor: "agent" });
+    const unused = session().audit.unused(TOOL_NAMES);
 
     expect(unused).not.toContain("get_incident");
     expect(unused).toContain("get_runbook");
-    expect(unused.length).toBe(READ_ONLY_TOOL_NAMES.length - 1);
+    expect(unused.length).toBe(TOOL_NAMES.length - 1);
   });
 
-  it("refuses an unknown tool name with the list of real ones", () => {
-    const result = invokeTool("get_root_cause", {}, { source: "webmcp", actor: "agent" });
+  it("refuses an unknown tool name with the list of real ones", async () => {
+    const result = await invokeTool("get_root_cause", {}, { source: "webmcp", actor: "agent" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("list_services");
   });
@@ -350,6 +350,16 @@ describe("declarations", () => {
   });
 
   it("has a handler for every declared tool", () => {
-    expect(READ_ONLY_TOOL_NAMES.sort()).toEqual(READ_ONLY_TOOLS.map((t) => t.name).sort());
+    expect([...TOOL_NAMES].sort()).toEqual(ALL_TOOLS.map((t) => t.name).sort());
+  });
+
+  it("declares fourteen tools: twelve that read, one that proposes, one that changes", () => {
+    // FR-0 — exactly one Class C tool is the entire surface through which the environment
+    // can change, and FR-8 gates it.
+    expect(ALL_TOOLS).toHaveLength(14);
+    expect(ALL_TOOLS.filter((t) => t.annotations.readOnlyHint === false).map((t) => t.name)).toEqual([
+      "propose_remediation",
+      "execute_remediation",
+    ]);
   });
 });

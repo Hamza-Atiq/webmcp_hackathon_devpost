@@ -48,14 +48,17 @@ export interface ConsoleHarness {
    * still exercise every bound, refusal and evidence rule. What it cannot prove is
    * registration, which is why the DevTools panel check exists as well.
    *
+   * Every call returns a promise — `execute_remediation` genuinely waits for a person, so
+   * the whole surface is async. Use `await agentops.tools.get_incident()` in the console.
+   *
    * Calls made here are recorded as `source: ui` — a human operating the page, not a
    * tool call that arrived over the API — so the ids they return are deliberately *not*
    * citable (FR-13.5). Use `callAsAgent` when that is the path you mean to test.
    */
-  tools: Record<string, (args?: Record<string, unknown>) => ToolResult>;
+  tools: Record<string, (args?: Record<string, unknown>) => Promise<ToolResult>>;
 
   /** Invoke a tool down the agent path, so the ids it returns become citable. */
-  callAsAgent(name: string, args?: Record<string, unknown>): ToolResult;
+  callAsAgent(name: string, args?: Record<string, unknown>): Promise<ToolResult>;
 
   /** What the live session has shown, to whom. */
   evidence(): void;
