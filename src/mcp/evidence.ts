@@ -24,6 +24,12 @@ export interface EvidenceEntry {
   /** The tool that first returned it. */
   tool: string;
   /**
+   * The arguments of that call. A minted metric id has no record behind it to look up,
+   * and FR-7.6 requires cited evidence to appear in readable form — "met_0004" tells a
+   * human nothing, "get_metrics p99 checkout-service" tells them what the agent looked at.
+   */
+  args?: string;
+  /**
    * Which channels have seen this id. Only a WebMCP call makes an id citable
    * (FR-13.5): records a human browsed in the interface were never returned to the
    * agent and cannot support the agent's citation.
@@ -41,7 +47,10 @@ export class EvidenceRegistry {
    * a tool cannot mislabel what it returned and satisfy FR-4.8 with two ids of the same
    * kind dressed as two sources.
    */
-  record(ids: readonly string[], meta: { channel: Channel; tool: string; simMs: number }): void {
+  record(
+    ids: readonly string[],
+    meta: { channel: Channel; tool: string; simMs: number; args?: string },
+  ): void {
     for (const id of ids) {
       const existing = this.byId.get(id);
       if (existing) {
@@ -55,6 +64,7 @@ export class EvidenceRegistry {
         source,
         simMs: meta.simMs,
         tool: meta.tool,
+        args: meta.args,
         channels: new Set<Channel>([meta.channel]),
       });
     }

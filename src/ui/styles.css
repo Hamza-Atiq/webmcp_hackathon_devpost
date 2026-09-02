@@ -1196,3 +1196,233 @@ button.record:hover {
   font: 400 12px/1.5 var(--sans);
   color: var(--ink-dim);
 }
+
+/* --- The approval gate ------------------------------------------------------
+ * Amber, never red. Red means an open incident and nothing else in this
+ * interface; a second red element would dilute the one signal that means
+ * something is broken. An approval is attention, not alarm.
+ *
+ * Full width and above the working columns, because FR-8.9 asks for a prompt
+ * that cannot be worked around — an agent's tool call is suspended on it.
+ */
+
+.approval {
+  border-top: 1px solid var(--amber-dim);
+  border-bottom: 1px solid var(--amber-dim);
+  background: linear-gradient(180deg, rgba(232, 163, 61, 0.09), rgba(232, 163, 61, 0.03));
+  padding: 14px 20px 16px;
+}
+
+.approval-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.approval-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.approval-head h2 strong {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+.approval-tag {
+  font: 600 9px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--void);
+  background: var(--amber);
+  padding: 5px 7px;
+  border-radius: 2px;
+}
+
+.approval-clock {
+  margin-left: auto;
+  font: 500 20px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--amber);
+}
+
+.approval-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 24px;
+  margin: 13px 0 0;
+}
+
+.approval-label {
+  margin: 0 0 6px;
+  font: 500 9px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.hypothesis {
+  margin: 0;
+  font: 400 13px/1.55 var(--sans);
+  color: var(--ink);
+}
+
+.approval-params {
+  margin: 8px 0 0;
+  display: flex;
+  gap: 14px;
+  font: 400 11px/1.5 var(--mono);
+  color: var(--ink-faint);
+}
+
+.approval-params strong {
+  color: var(--ink-dim);
+}
+
+.cited {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.cited li {
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.cited-id {
+  font: 400 10px/1.5 var(--mono);
+  color: var(--amber);
+}
+
+.cited-text {
+  font: 400 11px/1.5 var(--mono);
+  color: var(--ink-dim);
+  word-break: break-word;
+}
+
+.approval-actions,
+.approval-deny-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.approval-deny label {
+  display: block;
+  margin-top: 14px;
+  font: 400 11px/1.5 var(--mono);
+  color: var(--ink-faint);
+}
+
+.approval-deny-row {
+  margin-top: 7px;
+}
+
+.approval-deny-row .search {
+  flex: 1;
+  max-width: 460px;
+}
+
+.approve,
+.deny {
+  font: 500 12px/1 var(--sans);
+  padding: 9px 15px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.approve {
+  background: var(--amber);
+  color: var(--void);
+  font-weight: 600;
+}
+
+.approve:hover {
+  filter: brightness(1.08);
+}
+
+.deny {
+  background: transparent;
+  border-color: var(--rule);
+  color: var(--ink-dim);
+}
+
+.deny:hover {
+  border-color: var(--ink-faint);
+  color: var(--ink);
+}
+
+.approval-note {
+  font: 400 11px/1.5 var(--mono);
+  color: var(--ink-faint);
+}
+
+.blast.is-medium {
+  border-color: var(--amber-dim);
+  color: var(--amber);
+}
+
+.blast.is-low {
+  border-color: var(--rule);
+  color: var(--ink-faint);
+}
+
+/* --- Proposals in the record column ---------------------------------------- */
+
+.proposals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.proposal {
+  display: grid;
+  grid-template-columns: 74px 90px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.proposal-id {
+  font: 400 10px/1.5 var(--mono);
+  color: var(--ink-faint);
+}
+
+.proposal-status {
+  font: 500 9px/1.6 var(--mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.proposal.is-awaiting_approval .proposal-status {
+  color: var(--amber);
+}
+
+.proposal.is-executed .proposal-status {
+  color: var(--sage);
+}
+
+.proposal-main {
+  font: 400 12px/1.5 var(--mono);
+  color: var(--ink-dim);
+}
+
+.proposal-why {
+  display: block;
+  margin-top: 3px;
+  font: 400 11px/1.5 var(--sans);
+  font-style: normal;
+  color: var(--ink-faint);
+}

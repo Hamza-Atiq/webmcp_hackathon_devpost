@@ -42,6 +42,13 @@ export interface Proposal {
   parameters: RemediationParams;
   evidenceIds: string[];
   blastRadius: "LOW" | "MEDIUM" | "HIGH";
+  /**
+   * Wall-clock ms at which the approval expires, while one is being awaited.
+   *
+   * Real time, not simulated: the countdown a human watches has to be the same sixty
+   * seconds the timer is counting, whatever the speed multiplier says (FR-3.5).
+   */
+  approvalDeadline: number | null;
   decidedAt: number | null;
   /** The human's words on denial — FR-8.6. */
   decisionReason: string | null;
@@ -205,6 +212,7 @@ export class ProposalStore {
       parameters: input.parameters,
       evidenceIds: [...input.evidenceIds],
       blastRadius: BLAST_RADIUS[input.action],
+      approvalDeadline: null,
       decidedAt: null,
       decisionReason: null,
       actionId: null,
@@ -248,6 +256,7 @@ export class ProposalStore {
     }
 
     this.move(proposal, "awaiting_approval", simNow);
+    proposal.approvalDeadline = Date.now() + this.timeoutMs;
     options.onStateChange?.();
 
     const settled = new Promise<Settlement>((resolve) => {

@@ -154,6 +154,7 @@ export async function invokeTool(
       channel: origin.source,
       tool: name,
       simMs: engine.world.nowMs,
+      args: summarise(JSON.stringify(args ?? {}), 80),
     });
   }
 

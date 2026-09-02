@@ -15,6 +15,8 @@ import { ServiceMap } from "./ServiceMap";
 import { MetricChart } from "./MetricChart";
 import { EvidenceTabs } from "./EvidenceTabs";
 import { IncidentRecord } from "./IncidentRecord";
+import { ApprovalPrompt } from "./ApprovalPrompt";
+import { session } from "../session";
 import { millis, pct, simClock } from "./format";
 
 /**
@@ -70,6 +72,21 @@ export function App() {
 
       <AlarmRail incident={incident} point={engine.health(focus)} serviceLabel={focus} />
 
+      {/*
+        FR-8.9 — above the working columns, full width, and impossible to work around.
+        An agent's tool call is suspended on this decision, so the interface should not
+        let anyone continue as though nothing were pending.
+      */}
+      {sim.awaitingApproval && (
+        <ApprovalPrompt
+          proposal={sim.awaitingApproval}
+          engine={engine}
+          evidence={session().evidence}
+          onApprove={sim.approve}
+          onDeny={sim.deny}
+        />
+      )}
+
       <main className="regions">
         <section className="region region-environment">
           <h2 className="region-head">
@@ -122,7 +139,8 @@ export function App() {
             engine={engine}
             audit={sim.audit}
             service={service}
-            onRollback={sim.rollback}
+            proposals={sim.proposals}
+            onRemediate={sim.remediate}
             onStatus={sim.setStatus}
           />
         </section>

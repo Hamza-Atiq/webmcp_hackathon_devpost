@@ -2,6 +2,8 @@ import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalSt
 import { Engine, type ServiceName } from "../engine";
 import { TICK_MS, type SpeedMultiplier } from "../engine/constants";
 import type { AuditEntry } from "../mcp/audit";
+import type { Proposal } from "../mcp/proposals";
+import { ACTION_KINDS, type ActionKind, type RemediationParams } from "../engine";
 import { notifySession, onSessionChange, resetSession, session } from "../session";
 
 /**
@@ -51,8 +53,14 @@ export interface Simulation {
   triggerScenario(): void;
   scenarioPending: boolean;
   rollback(service: ServiceName): void;
+  /** FR-12.1 — every action the agent has, a human has too, with the same parameters. */
+  remediate(kind: ActionKind, service: ServiceName, params?: RemediationParams): void;
   setStatus(status: "investigating" | "identified" | "mitigating" | "resolved"): void;
   audit: readonly AuditEntry[];
+  proposals: readonly Proposal[];
+  awaitingApproval: Proposal | undefined;
+  approve(id: string): void;
+  deny(id: string, reason: string): void;
 }
 
 export function useSimulation(): Simulation {
@@ -73,7 +81,7 @@ export function useSimulation(): Simulation {
 
   /** FR-13.1a — a dashboard click is a `ui_action`, never a tool call. */
   const record = useCallback(
-    (operation: string, args: string, summary: string, ok: boolean, sideEffect: "A" | "C") => {
+    (operation: string, args: string, summary: string, ok: boolean, sideEffect: "A" | "B" | "C") => {
       const { engine, audit } = session();
       audit.add({
         timestamp: engine.world.nowMs,
@@ -130,23 +138,61 @@ export function useSimulation(): Simulation {
     repaint();
   }, [record]);
 
-  const rollback = useCallback(
-    (service: ServiceName) => {
+  /**
+   * A human action needs no approval — the person clicking is the approver (FR-12.5) —
+   * and it runs the same engine operation an approved agent proposal runs (FR-12.2). It
+   * mints an action_id and a before-snapshot like any other applied action (FR-10.1a).
+   */
+  const remediate = useCallback(
+    (kind: ActionKind, service: ServiceName, params: RemediationParams = {}) => {
       const { engine } = session();
-
-      /*
-       * A human rollback is an applied action like any other: it mints an action_id and
-       * stores its before-snapshot, so `verify_remediation` can measure against it even
-       * though no agent was involved (FR-10.1a).
-       */
-      const applied = engine.rollback(service, "human");
+      const outcome = engine.remediate(kind, service, params, "human");
       record(
-        "rollback_deployment",
-        `service: ${service}`,
-        applied ? `${applied.summary} (${applied.id})` : `No deployment available to roll back on ${service}`,
-        applied !== null,
+        kind,
+        `service: ${service}${describeParams(params)}`,
+        outcome.ok ? `${outcome.action.summary} (${outcome.action.id})` : outcome.error,
+        outcome.ok,
         "C",
       );
+      repaint();
+    },
+    [record],
+  );
+
+  const rollback = useCallback(
+    (service: ServiceName) => remediate("rollback_deployment", service),
+    [remediate],
+  );
+
+  const approve = useCallback(
+    (id: string) => {
+      const { engine, proposals } = session();
+      const proposal = proposals.get(id);
+      if (!proposals.approve(id, engine.world.nowMs)) return;
+
+      /*
+       * Class C: the approval is what causes the change, even though the agent's call is
+       * what applies it a moment later. The trail should show the human as the cause.
+       */
+      record(
+        "approve_proposal",
+        `proposal: ${id}`,
+        `Approved ${proposal?.action ?? "action"} on ${proposal?.service ?? ""}`,
+        true,
+        "C",
+      );
+      repaint();
+    },
+    [record],
+  );
+
+  const deny = useCallback(
+    (id: string, reason: string) => {
+      const { engine, proposals } = session();
+      if (!proposals.deny(id, reason, engine.world.nowMs)) return;
+
+      // Class B: the record changed, the environment did not.
+      record("deny_proposal", `proposal: ${id}`, `Denied: ${reason}`, true, "B");
       repaint();
     },
     [record],
@@ -177,7 +223,21 @@ export function useSimulation(): Simulation {
     triggerScenario,
     scenarioPending: current.engine.scenarioPending,
     rollback,
+    remediate,
     setStatus,
     audit: current.audit.all,
+    proposals: current.proposals.all,
+    awaitingApproval: current.proposals.awaitingApproval,
+    approve,
+    deny,
   };
 }
+
+function describeParams(params: RemediationParams): string {
+  const parts = Object.entries(params)
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}: ${value}`);
+  return parts.length > 0 ? `, ${parts.join(", ")}` : "";
+}
+
+export { ACTION_KINDS };

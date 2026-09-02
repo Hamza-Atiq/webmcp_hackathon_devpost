@@ -1,5 +1,16 @@
-import { SERVICE_NAMES, type Engine, type ServiceName } from "../engine";
+import {
+  ACTION_KINDS,
+  BLAST_RADIUS,
+  MAX_REPLICAS,
+  flagByKey,
+  type ActionKind,
+  type Engine,
+  type RemediationParams,
+  type ServiceName,
+} from "../engine";
+import { SERVICE_NAMES } from "../engine";
 import type { AuditEntry } from "./useSimulation";
+import type { Proposal } from "../mcp/proposals";
 import { shortClock } from "./format";
 
 /**
@@ -17,23 +28,37 @@ type ChosenStatus = "investigating" | "identified" | "mitigating" | "resolved";
 
 const NEXT_STATUS: ChosenStatus[] = ["investigating", "identified", "mitigating", "resolved"];
 
+/**
+ * What a human control does, in the words shown on it.
+ *
+ * The five are the same five an agent can propose (FR-12.1), with the same parameters,
+ * and they run the same engine operation (FR-12.2). A human needs no approval for them,
+ * because the person clicking is already the approver (FR-12.5).
+ */
+const ACTION_LABELS: Record<ActionKind, string> = {
+  rollback_deployment: "Roll back deployment",
+  restart_service: "Restart service",
+  scale_replicas: "Scale replicas",
+  disable_feature_flag: "Disable feature flag",
+  shift_traffic: "Shift traffic away",
+};
+
 export function IncidentRecord({
   engine,
   audit,
   service,
-  onRollback,
+  proposals,
+  onRemediate,
   onStatus,
 }: {
   engine: Engine;
   audit: readonly AuditEntry[];
   service: ServiceName;
-  onRollback(service: ServiceName): void;
+  proposals: readonly Proposal[];
+  onRemediate(kind: ActionKind, service: ServiceName, params?: RemediationParams): void;
   onStatus(status: ChosenStatus): void;
 }) {
   const incident = engine.incident;
-  const rollbackTarget = engine.world.deployments
-    .filter((d) => d.service === service && !d.rolledBack)
-    .sort((a, b) => b.t - a.t)[0];
 
   return (
     <div className="record-column">
@@ -97,24 +122,58 @@ export function IncidentRecord({
           Target <strong>{service}</strong> — selected in the environment list.
         </p>
 
-        <button
-          type="button"
-          className="action"
-          disabled={!rollbackTarget}
-          onClick={() => onRollback(service)}
-        >
-          <span className="action-name">Roll back deployment</span>
-          <span className="blast is-high">HIGH blast radius</span>
-          <span className="action-detail">
-            {rollbackTarget
-              ? `${rollbackTarget.version} → ${rollbackTarget.previousVersion} · ${rollbackTarget.summary}`
-              : "Nothing left to roll back on this service"}
-          </span>
-        </button>
+        {ACTION_KINDS.map((kind) => (
+          <button
+            key={kind}
+            type="button"
+            className="action"
+            onClick={() => onRemediate(kind, service, defaultParams(engine, kind, service))}
+          >
+            <span className="action-name">{ACTION_LABELS[kind]}</span>
+            <span className={`blast is-${BLAST_RADIUS[kind].toLowerCase()}`}>
+              {BLAST_RADIUS[kind]} blast radius
+            </span>
+            <span className="action-detail">{actionDetail(engine, kind, service)}</span>
+          </button>
+        ))}
 
         <p className="note">
-          Restart, scale, feature flag and traffic shift arrive with the mechanisms they act on.
+          Your actions apply immediately and are not gated — you are the approver. An agent
+          proposing any of these has to wait for your click.
         </p>
+      </section>
+
+      <section className="block">
+        <h3 className="block-head">
+          Proposals
+          <span className="block-note">{proposals.length} from the agent</span>
+        </h3>
+
+        {proposals.length > 0 ? (
+          <ol className="proposals">
+            {proposals
+              .slice()
+              .reverse()
+              .map((proposal) => (
+                <li key={proposal.id} className={`proposal is-${proposal.status}`}>
+                  <span className="proposal-id">{proposal.id}</span>
+                  <span className="proposal-status">{proposal.status.replace(/_/g, " ")}</span>
+                  <span className="proposal-main">
+                    <strong>{ACTION_LABELS[proposal.action]}</strong> on {proposal.service}
+                    <em className="proposal-why">{proposal.hypothesis}</em>
+                    {proposal.decisionReason && (
+                      <em className="proposal-why">Your reason: {proposal.decisionReason}</em>
+                    )}
+                  </span>
+                </li>
+              ))}
+          </ol>
+        ) : (
+          <p className="empty">
+            Nothing proposed. An agent must cite two independent pieces of evidence before it can
+            propose anything at all.
+          </p>
+        )}
       </section>
 
       <section className="block block-grow">
@@ -175,4 +234,48 @@ export function IncidentRecord({
   );
 }
 
-export { SERVICE_NAMES };
+/** Sensible defaults, so a human control is one click rather than a form. */
+function defaultParams(engine: Engine, kind: ActionKind, service: ServiceName): RemediationParams {
+  switch (kind) {
+    case "scale_replicas":
+      return {
+        replicas: Math.min(MAX_REPLICAS, Math.round(engine.world.services[service].config.replicas) + 3),
+      };
+    case "disable_feature_flag":
+      return { flag: engine.world.flags.find((f) => f.service === service && f.enabled)?.key };
+    case "shift_traffic":
+      return { fraction: 0.5 };
+    default:
+      return {};
+  }
+}
+
+/** What this control would actually do to this service, right now. */
+function actionDetail(engine: Engine, kind: ActionKind, service: ServiceName): string {
+  const state = engine.world.services[service];
+
+  switch (kind) {
+    case "rollback_deployment": {
+      const target = engine.world.deployments
+        .filter((d) => d.service === service && !d.rolledBack)
+        .sort((a, b) => b.t - a.t)[0];
+      return target
+        ? `${target.version} → ${target.previousVersion} · ${target.summary}`
+        : "No deployment left to roll back on this service";
+    }
+    case "restart_service":
+      return "Clears process state; in-flight requests fail while replicas cycle";
+    case "scale_replicas": {
+      const now = Math.round(state.config.replicas);
+      return `${now} → ${Math.min(MAX_REPLICAS, now + 3)} replicas`;
+    }
+    case "disable_feature_flag": {
+      const flag = engine.world.flags.find((f) => f.service === service && f.enabled);
+      return flag ? `${flag.key} · ${flag.description}` : "No enabled flag on this service";
+    }
+    case "shift_traffic":
+      return "Routes half this service's traffic elsewhere; the database it shares sees the same load";
+  }
+}
+
+export { SERVICE_NAMES, flagByKey };
