@@ -9,14 +9,23 @@ with the phase that will build it.
 
 Status: **done** · **partial** (works, incomplete against the clause) · **open** (not started).
 
-_Last checked: 2 September 2026, after P3 groundwork (`b0c14a7`)._
+_Last checked: 2 September 2026, after P3 shipped the read-only tool layer (`2b2a763`)._
 
 ---
 
 ## Live gaps — in the shipped product now, not phase deferrals
 
-These four are not "later work". They are clauses the current build contradicts or has left
-unassigned, found by this audit.
+**All four are now closed.** G1, G2 and G4 in `5833b98`; G3 in `2b2a763`; and the fourth
+prerequisite `003` §1 named — action ids and before-snapshots, FR-10.1a — in `5bb0726`. The table
+is kept as written because the reasoning is what makes the next audit worth doing.
+
+Three further defects were found in this phase, none of them by a test. All three passed a green
+suite and failed the moment the tool layer was driven on a live page: the simulation froze in a
+hidden tab (`requestAnimationFrame` is throttled to nothing when the page is not visible),
+`search_logs` dropped the correlation id that links logs to traces, and the runbook search
+returned the least specific match first. Fixed in `741e940`, with `5b5e76a` correcting the
+bounding order in `003` that caused the second. **The standing rule earned its keep: nothing is
+finished until it has been seen working.**
 
 | # | Clause | What is wrong | Fix |
 |---|---|---|---|
@@ -82,11 +91,20 @@ unassigned, found by this audit.
 | **5.2 manual trigger** | **open, unassigned — see G2** | now |
 | 5.3 opens automatically with severity | done | |
 | 5.4 status progression | done | |
-| 5.5 status changes, tool calls and remediations on the timeline | partial — status and remediation yes, tool calls not yet | P3 |
+| 5.5 status changes, tool calls and remediations on the timeline | partial — status and remediation on the timeline; tool calls are in the audit trail | P6 |
 
-## FR-6 — Read-only tools · **open** → P3
+## FR-6 — Read-only tools · **done**
 
-11 tools, output bounds, evidence ids, `untrustedContentHint`. Contracts fixed in `003`.
+| Clause | Status | Note |
+|---|---|---|
+| 6.1 every response carries citable ids | done | all twelve; metrics mint `met_*` per response |
+| 6.2 `untrustedContentHint` on log content | done | annotation **and** `content_trust` in the body |
+| 6.3 bounded output | done | ceiling asserted at maximum parameters for every tool |
+| 6.4 instructive refusals | done | unknown values name the valid ones; an aged-out trace is distinguished from one that never existed |
+
+All twelve Class A tools ship in `src/mcp/tools/readonly.ts` as plain functions, bound by
+`register.ts`. Verified live through the console harness; the DevTools panel check is still owed
+and needs the Chrome flag.
 
 ## FR-7 — Proposal and evidence validation · **open** → P4
 ## FR-8 — Approval gate · **open** → P4
@@ -107,11 +125,19 @@ unstarted work in the spec.
 | 9.4a S4 rollback hits an unrelated deploy | open | P5 |
 | 9.5 wrong service, no effect | open | P5 |
 
-## FR-10 — Verification · **open** → P3/P4
+## FR-10 — Verification · **done**
 
-`verify_remediation` is Class A and belongs to P3; the action ids and before-snapshots it needs
-(FR-10.1a) are specified in `003` and not yet built. FR-10.4 (`resolved` gated on verification) is
-**done** in the engine already.
+| Clause | Status | Note |
+|---|---|---|
+| 10.1 compares the before-snapshot against now | done | `src/engine/actions.ts` |
+| 10.1a every applied action mints an id, human or agent | done | the P2 dashboard rollback included |
+| 10.1b `verify_remediation` mutates nothing | done | Class A |
+| 10.2 the verdict is measured, not inferred | done | a wrong action reaches the same code path and fails on the signals |
+| 10.3 a failure names what is still out of bounds | done | |
+| 10.4 `resolved` gated on verification | done | |
+
+Verified live: a human rollback at T+472s minted `act_0001` with error rate 9.28% and p99 3106ms,
+and verification at T+583s measured 0.24% and 112ms — verdict `passed`.
 
 ## FR-11 — Incident closure · **open** → P6
 ## FR-12 — Human parity · **partial**
@@ -120,25 +146,31 @@ unstarted work in the spec.
 |---|---|---|
 | 12.1 every agent action available to a human | partial — rollback only | P5 |
 | 12.2 one implementation, not two | done | UI calls the same engine methods |
-| **12.3 all evidence browsable with no agent** | **partial — see G3** | now |
+| 12.3 all evidence browsable with no agent | **done** — five tabs; runbooks and ownership added in `2b2a763` | |
 | 12.4 a human can complete an entire incident | partial — no postmortem yet | P6 |
 | 12.5 human actions need no approval | done | |
 
-## FR-13 — Audit trail · **partial** → P3
+## FR-13 — Audit trail · **done for Class A**
 
-Five of the ten required fields are recorded. Missing: `duration_ms`, `side_effect_class`,
-`status`, and `kind` as a first-class field. FR-13.4 (which tools have gone unused) and FR-13.5
-(only `source: webmcp` counts as evidence) are not started.
+All ten fields are recorded, for tool calls and dashboard clicks alike, in one trail
+(`src/mcp/audit.ts`). FR-13.1a keeps `source` and `actor` separate, and only `source` is
+load-bearing: the page cannot tell an agent from a human invoking the same tool by hand in the
+DevTools panel, so FR-13.5 keys citability on how a call arrived rather than on a claim the page
+cannot verify. FR-13.3 (refusals recorded with their reason) and FR-13.4 (which tools have gone
+unused) are both covered by tests.
+
+Class B and C operations join the same trail in P4; the interface renders it as a flat list and
+gets its unified source/actor treatment in P6.
 
 ## FR-14 — Tool registration · **partial** → P3
 
 | Clause | Status |
 |---|---|
-| 14.1 `document.modelContext.registerTool` | open — the registration hook exists and registers nothing |
+| 14.1 `document.modelContext.registerTool` | done in code — twelve tools bound; **not yet seen registering**, which needs the Chrome flag |
 | 14.2 top-level only | done — no iframes |
 | 14.3 single page, no navigation | done — no router |
 | 14.4 registered exactly once | done — module-scope guard, outside React |
-| 14.5 typed schemas and validation | open |
+| 14.5 typed schemas and validation | done — JSON Schema per tool in `schemas.ts`, validation in every handler |
 | 14.6 works without WebMCP | done — verified live |
 
 ## FR-15 — Reset and determinism · **partial**
@@ -167,9 +199,9 @@ Five of the ten required fields are recorded. Missing: `duration_ms`, `side_effe
 | AC-7 wrong fixes fail | open — P5 |
 | AC-8 rollback is not universal | open — P5, and blocked on G1 |
 | AC-9 correct fixes recover | done for s1 — verified live |
-| AC-10 a human alone can do everything | partial — full arc run by hand in Chrome; postmortem missing |
-| AC-11 the trail is complete | partial — P3 |
-| AC-12 it repeats exactly | partial — replay tested, speed independence not (G4) |
+| AC-10 a human alone can do everything | partial — full arc by hand in Chrome, all evidence browsable; postmortem missing |
+| AC-11 the trail is complete | partial — all ten fields for Class A; B and C in P4 |
+| AC-12 it repeats exactly | **done** — replay and speed independence both tested |
 | AC-13 works on both surfaces | open — P7, needs the Chrome flag |
 | AC-14 degrades gracefully | **done** — verified live with no WebMCP |
 | AC-15 the full arc runs | open — P4 onward |
