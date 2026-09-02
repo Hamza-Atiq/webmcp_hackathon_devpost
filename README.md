@@ -10,7 +10,7 @@ it may **execute**.*
 > **Status: in active development.** Deployment skeleton is live; the simulation engine, evidence
 > sources and WebMCP tool layer are landing phase by phase.
 
-**Live URL:** _(added below once deployed)_
+**Live URL:** <https://webmcp-hackathon-devpost.vercel.app>
 **Demo video:** _(added at submission)_
 
 ---
