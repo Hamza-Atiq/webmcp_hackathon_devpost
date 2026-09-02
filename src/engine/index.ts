@@ -1,12 +1,14 @@
 import { TICKS_PER_SIM_SECOND } from "./constants";
-import { createWorld, scheduleConfigChange, type World } from "./world";
+import { createWorld, type World } from "./world";
 import { createStore, latestMetric, type Store } from "./store";
 import { createSim, tick, type Sim } from "./sim";
 import { addTimelineEntry, setIncidentStatus } from "./incident";
 import { findRunbooks, runbookById, type Runbook } from "./runbooks";
 import { ownershipFor, type Ownership } from "./ownership";
 import { seedBaselineHistory } from "./deployments";
-import { actionById, mostRecentAction, recordAction, type AppliedAction } from "./actions";
+import { seedFeatureFlags } from "./flags";
+import { applyRemediation, type RemediationOutcome, type RemediationParams } from "./remediation";
+import { actionById, mostRecentAction, type ActionKind, type AppliedAction } from "./actions";
 import { onset as s1Onset } from "./scenarios/s1";
 import type { Incident, IncidentStatus, MetricPoint, ServiceName, TimelineEntry } from "./types";
 
@@ -45,6 +47,7 @@ export class Engine {
     this.sim = createSim(this.world, this.store);
     this.pending = options.autoStart ?? null;
     seedBaselineHistory(this.world);
+    seedFeatureFlags(this.world);
   }
 
   /** Advance the world by whole ticks. The only way simulated time moves. */
@@ -128,40 +131,26 @@ export class Engine {
    * so recovery is progressive rather than instant (FR-9.1). Returns false when there is
    * nothing eligible to roll back.
    */
+  /**
+   * Apply one of the five remediation actions — FR-9.
+   *
+   * The single entry point for changing the environment. The dashboard's controls and an
+   * approved agent proposal both arrive here, which is what keeps FR-12.2 true by
+   * construction rather than by discipline.
+   */
+  remediate(
+    kind: ActionKind,
+    service: ServiceName,
+    params: RemediationParams = {},
+    actor: TimelineEntry["actor"] = "human",
+  ): RemediationOutcome {
+    return applyRemediation(this.world, this.store, kind, service, params, actor);
+  }
+
+  /** Convenience for the commonest action and for the tests that predate `remediate`. */
   rollback(service: ServiceName, actor: TimelineEntry["actor"] = "human"): AppliedAction | null {
-    const deployments = this.world.deployments
-      .filter((d) => d.service === service && !d.rolledBack)
-      .sort((a, b) => b.t - a.t);
-
-    const latest = deployments[0];
-    if (!latest || !latest.previousVersion) return null;
-
-    /*
-     * The snapshot is taken before the configuration change is scheduled, so that
-     * "before the action" is the state the action was applied against rather than a
-     * state already moving under it (FR-10.1a).
-     */
-    const applied = recordAction(this.world, this.store, {
-      kind: "rollback_deployment",
-      service,
-      actor,
-      summary:
-        `Rolled back ${service} from ${latest.version} to ${latest.previousVersion} ` +
-        `(deployment ${latest.id}).`,
-      target: latest.id,
-    });
-
-    for (const change of latest.diff) {
-      if (change.key === "DB_POOL_MAX") {
-        scheduleConfigChange(this.world, service, "dbPoolMax", Number(change.from));
-      }
-    }
-
-    latest.rolledBack = true;
-
-    // FR-5.5: a remediation belongs on the incident timeline with its actor.
-    addTimelineEntry(this.world, actor, applied.summary);
-    return applied;
+    const outcome = this.remediate("rollback_deployment", service, {}, actor);
+    return outcome.ok ? outcome.action : null;
   }
 
   /** Everything applied to the environment so far, oldest first — FR-10.1a, FR-13. */
@@ -186,6 +175,9 @@ export { OWNERSHIP, ownershipFor } from "./ownership";
 export type { Runbook } from "./runbooks";
 export type { Ownership } from "./ownership";
 export { actionById, mostRecentAction, recordAction } from "./actions";
+export { applyRemediation, ACTION_KINDS, BLAST_RADIUS, MAX_REPLICAS, MIN_REPLICAS } from "./remediation";
+export type { RemediationOutcome, RemediationParams } from "./remediation";
+export { seedFeatureFlags, flagByKey } from "./flags";
 export type { ActionKind, AppliedAction, ServiceSnapshot } from "./actions";
 export type {
   Deployment,

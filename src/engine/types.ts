@@ -73,6 +73,8 @@ export interface ServiceState {
   trafficShiftedAway: number;
   /** Sim-ms at which the process last started; restart_service resets it. */
   startedAtMs: number;
+  /** Sim-ms until which a rolling restart is still cycling replicas. */
+  restartingUntilMs: number;
 }
 
 /** One second of aggregated observations for one service. */

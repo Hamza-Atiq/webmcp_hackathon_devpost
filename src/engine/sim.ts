@@ -108,8 +108,25 @@ export function tick(sim: Sim): void {
     const acc = sim.acc[name];
 
     // --- offered load -------------------------------------------------------
+    /*
+     * Shifted traffic is *served elsewhere*, not deleted.
+     *
+     * This distinction decides whether the product's premise holds. When shifting simply
+     * removed load, `shift_traffic` drained the connection pool and fully resolved
+     * scenario 1 — a second universal fix, which FR-9.2's failure test calls void.
+     * Measured, not reasoned about: 10.77% error and 3105ms p99 went to 0.00% and 116ms.
+     *
+     * What actually happens when traffic moves away from a service is that some other
+     * instance answers it — against the same database. So the requests this service still
+     * serves fall (`localRps`, which is what its own metrics count and what its replicas
+     * must be sized for), while the shared connection pool goes on seeing the whole
+     * demand. That is the same argument FR-9.2a makes for replicas, and it is why moving
+     * traffic relieves a service that is itself the bottleneck and does nothing at all for
+     * one queueing on a resource it shares.
+     */
     const variation = 1 + world.rng.range(-BASELINE_VARIATION, BASELINE_VARIATION);
-    const rps = service.inboundRps * (1 - service.trafficShiftedAway) * variation;
+    const offeredRps = service.inboundRps * variation;
+    const rps = offeredRps * (1 - service.trafficShiftedAway);
 
     const exact = rps * TICK_SEC + sim.remainder[name];
     const count = Math.floor(exact);
@@ -121,8 +138,19 @@ export function tick(sim: Sim): void {
       util <= SATURATION_KNEE ? 1 : 1 + (util - SATURATION_KNEE) / Math.max(0.02, 1 - util);
     const satErrorRate = util > 1 ? Math.min(0.5, (util - 1) * 0.8) : 0;
 
+    /*
+     * A rolling restart cycles replicas one at a time, so roughly one replica's share of
+     * requests is refused at any moment rather than all of them (FR-9). This is why
+     * restarting is visibly a *cost* paid up front: the signals get worse before whatever
+     * the restart cleared has any chance to help.
+     */
+    const restartErrorRate =
+      world.nowMs < service.restartingUntilMs && cfg.replicas > 0 ? 1 / cfg.replicas : 0;
+
     // --- connection pool ----------------------------------------------------
-    const dbRps = rps * cfg.dbFraction;
+    // The pool is shared across every instance serving this service, so it sees the whole
+    // offered load regardless of which instance answered — see the note above.
+    const dbRps = offeredRps * cfg.dbFraction;
     let waitMs = 0;
     let timeoutShare = 0;
 
@@ -172,6 +200,11 @@ export function tick(sim: Sim): void {
       if (!failed && satErrorRate > 0 && world.rng.chance(satErrorRate)) {
         failed = true;
         failure = "service overloaded";
+      }
+
+      if (!failed && restartErrorRate > 0 && world.rng.chance(restartErrorRate)) {
+        failed = true;
+        failure = "connection refused: replica restarting";
       }
 
       // Background failure rate every real service has. Flagged as routine: a healthy

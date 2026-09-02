@@ -16,11 +16,12 @@ import type { ServiceName, TimelineEntry } from "./types";
  * thresholds, so recording an intention here would only invite reading it back out.
  */
 
+/** FR-9's names, exactly. These strings are the tool contract. */
 export type ActionKind =
   | "rollback_deployment"
   | "restart_service"
-  | "scale_service"
-  | "toggle_feature_flag"
+  | "scale_replicas"
+  | "disable_feature_flag"
   | "shift_traffic";
 
 /** One service's signals at the moment an action was applied. */

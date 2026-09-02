@@ -177,6 +177,7 @@ export function createWorld(seed: number): World {
       connectionsInUse: 0,
       trafficShiftedAway: 0,
       startedAtMs: 0,
+      restartingUntilMs: 0,
     };
   }
 

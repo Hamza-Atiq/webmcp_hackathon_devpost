@@ -61,6 +61,20 @@ export const GATEWAY_TIMEOUT_MS = 3000;
  */
 export const ROLLOUT_MS = 45_000;
 
+/**
+ * How long a rolling restart takes, in simulated ms, and the share of traffic that fails
+ * while it runs. Replicas cycle one at a time, so roughly one replica's worth of requests
+ * is failing at any moment rather than all of them.
+ */
+export const RESTART_MS = 8_000;
+
+/**
+ * The most traffic `shift_traffic` may route away. Not 100%: a service with no traffic
+ * has no signals, and an action that makes an incident *unobservable* rather than fixed
+ * would look like a recovery to any metric-based verdict.
+ */
+export const TRAFFIC_SHIFT_MAX = 0.9;
+
 /** Limits — FR-0. */
 export const MAX_PENDING_PROPOSALS = 3;
 export const APPROVAL_TIMEOUT_MS = 60_000;
