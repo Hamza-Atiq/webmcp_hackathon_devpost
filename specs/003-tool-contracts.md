@@ -124,8 +124,16 @@ what it covered — service, metric, window. The alternative, a deterministic id
 query, was rejected: two agents issuing the same query in different runs would produce the same id,
 which would let a proposal cite evidence from a previous run and defeat FR-7.3.
 
-Runbooks and ownership records carry static ids — `rb_pool_exhaustion`, `own_checkout-service` —
-because they are reference material, not observations, and are identical in every run.
+Runbooks, ownership records and services carry static ids — `rb_pool_exhaustion`,
+`own_checkout-service`, `svc_checkout-service` — because they are reference material, not
+observations, and are identical in every run.
+
+**Correction to an earlier draft of this document.** It exempted `list_services` from returning
+ids, reasoning that an inventory is not an observation. FR-6.1 admits no exception — *"every
+response includes the ids of the records returned, in a form citable as evidence"* — so the
+exemption was wrong and is removed. Whether an inventory id is *good* support for a hypothesis is
+a judgement for the human approver; the tool layer enforces provenance, not sufficiency, exactly
+as `spec.md` says of AC-4.
 
 ---
 
@@ -187,7 +195,7 @@ UI control. Every one names a reason an agent would reach for it.
 
 | # | Tool | Intent | Key inputs | Evidence ids returned |
 |---|---|---|---|---|
-| 1 | `list_services` | Learn what exists and how it is wired before drilling in | — | none (inventory, not observation) |
+| 1 | `list_services` | Learn what exists and how it is wired before drilling in | — | `svc_*` |
 | 2 | `get_service_health` | The four golden signals for one service, right now | `service` | `met_*` |
 | 3 | `get_metrics` | A time series to see *when* a signal changed | `service`, `metric`, `window_seconds` | `met_*` |
 | 4 | `search_logs` | Find what the service said about itself | `service?`, `level?`, `contains?`, `window_seconds?`, `limit?` | `log_*` |
@@ -269,6 +277,7 @@ built and verified against them first, and the flag gates the sign-off rather th
    connection-pool exhaustion as a known failure mode with the diagnostic steps — making the
    correct diagnosis *findable but still requiring correlation* — or stay generic ("latency
    triage") so the runbook confirms rather than reveals? This directly sets how hard the puzzle is.
-2. **`list_services` and evidence.** It returns no citable ids on the reasoning that an inventory
-   is not an observation. If it should be citable, it needs ids and a registry entry.
-3. **Clamping vs refusing** on an over-range `limit` — this document chooses clamping with a note.
+2. **Clamping vs refusing** on an over-range `limit` — this document chooses clamping with a note.
+
+*(A third question, whether `list_services` should return citable ids, was withdrawn: FR-6.1
+settles it. See section 5.)*
