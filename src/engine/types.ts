@@ -151,6 +151,15 @@ export interface Incident {
   severity: Severity;
   status: IncidentStatus;
   affectedServices: ServiceName[];
+  /** Symptom-level headline. Never names a cause — diagnosis is not the system's job (FR-2.5). */
+  title: string;
+  /**
+   * The measurements that produced the opening severity, kept so the assignment is
+   * traceable rather than asserted (AC-5a).
+   */
+  openingSignals: { service: ServiceName; errorRate: number; p99: number };
+  /** Sim-ms at which signals first sustained recovery. Gates `resolved` — FR-10.4. */
+  recoveryVerifiedAt: number | null;
   timeline: TimelineEntry[];
   resolvedAt: number | null;
 }

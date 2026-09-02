@@ -36,6 +36,15 @@ export const SEV1_ERROR_RATE = 0.25;
 export const SEV2_ERROR_RATE = 0.05;
 export const SEV2_P99_MS = 3000;
 
+/**
+ * Seconds of signal averaged when classifying severity.
+ *
+ * Detection itself uses raw per-second values, because FR-0 already filters noise by
+ * requiring a 15-second run. Classification smooths, so that one unlucky second cannot
+ * escalate an incident to SEV-1 and leave that on the permanent record.
+ */
+export const SEVERITY_WINDOW_SEC = 5;
+
 /** Verification passes only when both hold for this long — FR-0, FR-10.1. */
 export const RECOVERY_ERROR_RATE = 0.01;
 export const RECOVERY_P99_MS = 400;

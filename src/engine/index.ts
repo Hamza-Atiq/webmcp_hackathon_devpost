@@ -2,8 +2,9 @@ import { TICKS_PER_SIM_SECOND } from "./constants";
 import { createWorld, scheduleConfigChange, type World } from "./world";
 import { createStore, latestMetric, type Store } from "./store";
 import { createSim, tick, type Sim } from "./sim";
+import { addTimelineEntry, setIncidentStatus } from "./incident";
 import { onset as s1Onset, seedHistory as s1SeedHistory } from "./scenarios/s1";
-import type { MetricPoint, ServiceName } from "./types";
+import type { Incident, IncidentStatus, MetricPoint, ServiceName, TimelineEntry } from "./types";
 
 /**
  * The engine's public interface.
@@ -45,6 +46,28 @@ export class Engine {
     return latestMetric(this.store, service);
   }
 
+  /** The open incident record, or null while the environment is healthy. */
+  get incident(): Incident | null {
+    return this.world.incident;
+  }
+
+  /**
+   * Move the incident through its lifecycle (FR-5.4), recording who did it.
+   * Refuses with an explanation rather than throwing, because both the UI and the
+   * tool layer surface the reason to whoever tried.
+   */
+  setIncidentStatus(
+    status: IncidentStatus,
+    actor: TimelineEntry["actor"],
+  ): { ok: true } | { ok: false; error: string } {
+    return setIncidentStatus(this.world, status, actor);
+  }
+
+  /** Append an observation to the incident timeline — FR-5.5. */
+  recordTimelineEntry(actor: TimelineEntry["actor"], message: string): void {
+    addTimelineEntry(this.world, actor, message);
+  }
+
   /**
    * Roll a service back to its previous deployment.
    *
@@ -52,7 +75,7 @@ export class Engine {
    * so recovery is progressive rather than instant (FR-9.1). Returns false when there is
    * nothing eligible to roll back.
    */
-  rollback(service: ServiceName): boolean {
+  rollback(service: ServiceName, actor: TimelineEntry["actor"] = "human"): boolean {
     const deployments = this.world.deployments
       .filter((d) => d.service === service && !d.rolledBack)
       .sort((a, b) => b.t - a.t);
@@ -67,9 +90,25 @@ export class Engine {
     }
 
     latest.rolledBack = true;
+
+    // FR-5.5: a remediation belongs on the incident timeline with its actor.
+    addTimelineEntry(
+      this.world,
+      actor,
+      `Rolled back ${service} from ${latest.version} to ${latest.previousVersion} ` +
+        `(deployment ${latest.id}).`,
+    );
     return true;
   }
 }
 
 export { SERVICE_NAMES } from "./world";
-export type { MetricPoint, ServiceName } from "./types";
+export { classifySeverity, isBreaching, isRecovered, STATUS_ORDER } from "./incident";
+export type {
+  Incident,
+  IncidentStatus,
+  MetricPoint,
+  ServiceName,
+  Severity,
+  TimelineEntry,
+} from "./types";

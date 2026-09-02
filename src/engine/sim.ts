@@ -5,10 +5,11 @@ import {
   TICK_SEC,
   TRACE_SAMPLE_RATE,
 } from "./constants";
+import { evaluateIncident } from "./incident";
 import { stepPool } from "./mechanisms/pool";
 import { applyTransitions, nextId, SERVICE_NAMES, type World } from "./world";
 import { pushLog, pushMetric, pushTrace, type Store } from "./store";
-import type { ServiceName, Span } from "./types";
+import type { MetricPoint, ServiceName, Span } from "./types";
 
 /**
  * One tick of the world.
@@ -263,6 +264,7 @@ function recordTrace(
 
 function finaliseSecond(sim: Sim, second: number): void {
   const { world, store } = sim;
+  const points: Partial<Record<ServiceName, MetricPoint>> = {};
 
   for (const name of SERVICE_NAMES) {
     const acc = sim.acc[name];
@@ -270,7 +272,7 @@ function finaliseSecond(sim: Sim, second: number): void {
 
     if (acc.requests > 0) {
       const sorted = acc.latencies.slice().sort((a, b) => a - b);
-      pushMetric(store, name, {
+      const point: MetricPoint = {
         t: world.nowMs,
         requests: acc.requests,
         errors: acc.errors,
@@ -281,9 +283,15 @@ function finaliseSecond(sim: Sim, second: number): void {
         cpu: acc.cpu,
         memory: acc.memory,
         replicas: Math.round(service.config.replicas),
-      });
+      };
+      pushMetric(store, name, point);
+      points[name] = point;
     }
 
     sim.acc[name] = newAccumulator(second);
   }
+
+  // Detection runs on the second that has just closed, so an incident opens from the
+  // same numbers the dashboard and the tools report — never from a private signal.
+  evaluateIncident(world, store, points);
 }

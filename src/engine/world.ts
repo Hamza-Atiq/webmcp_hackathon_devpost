@@ -147,18 +147,22 @@ export interface World {
   deployments: Deployment[];
   flags: FeatureFlag[];
   incident: Incident | null;
-  /** Consecutive simulated seconds spent breaching the incident thresholds. */
-  breachSec: number;
-  /** Consecutive simulated seconds spent inside the recovery thresholds. */
-  recoverySec: number;
+  /** Consecutive simulated seconds each service has spent breaching incident thresholds. */
+  breachSec: Record<ServiceName, number>;
+  /** Consecutive simulated seconds each service has spent inside recovery thresholds. */
+  recoverySec: Record<ServiceName, number>;
   /** Monotonic id counters. Never random — FR-1.5. */
   counters: Record<string, number>;
 }
 
 export function createWorld(seed: number): World {
   const services = {} as Record<ServiceName, ServiceState>;
+  const breachSec = {} as Record<ServiceName, number>;
+  const recoverySec = {} as Record<ServiceName, number>;
 
   for (const name of SERVICE_NAMES) {
+    breachSec[name] = 0;
+    recoverySec[name] = 0;
     const def = SERVICE_DEFS[name];
     services[name] = {
       name,
@@ -183,8 +187,8 @@ export function createWorld(seed: number): World {
     deployments: [],
     flags: [],
     incident: null,
-    breachSec: 0,
-    recoverySec: 0,
+    breachSec,
+    recoverySec,
     counters: {},
   };
 }
