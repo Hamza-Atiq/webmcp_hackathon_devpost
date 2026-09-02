@@ -85,6 +85,20 @@ describe("output bounds — FR-0", () => {
     expect(result.evidence_ids).toEqual(data.entries.map((e) => e.id));
   });
 
+  it("gives up whole log lines rather than the link between logs and traces", () => {
+    /*
+     * The bounded case, not the small one. An earlier drop order stripped correlation_id
+     * from every row of an ordinary ten-line query while keeping it on a three-line one,
+     * which left the two-source path in FR-4.8 reachable only by accident.
+     */
+    const engine = investigating();
+    const result = expectOk(tools.searchLogs(engine, { service: "checkout-service", level: "error", limit: 10 }));
+    const entries = (result.data as { entries: Array<{ correlation_id?: string }> }).entries;
+
+    expect(result.truncated).toBe(true);
+    expect(entries.some((e) => e.correlation_id !== undefined)).toBe(true);
+  });
+
   it("stays inside the design target for the ordinary calls an agent makes first", () => {
     const engine = investigating();
     const opening = [

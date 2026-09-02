@@ -311,13 +311,12 @@ export function searchLogs(engine: Engine, args: Args): ToolResult {
     records: rows,
     cap: limit.value,
     narrowBy: 'Narrow with level:"error", a contains filter, a service, or a shorter window_seconds.',
-    // The fixed drop order of spec 003 §6: the correlation link goes before the line itself.
-    reducers: [
-      (row) => {
-        const { correlation_id: _correlation, trace_available: _available, ...rest } = row;
-        return rest;
-      },
-    ],
+    /*
+     * No reducers: the correlation id is not an optional field (spec 003 §6). It is the
+     * only link between logs and traces, and FR-4.8 exists to make an agent cross that
+     * boundary — so an over-long response gives up whole log lines rather than the link.
+     * Four lines that can be followed beat seven that lead nowhere.
+     */
     data: (list) => ({ entries: list }),
     ids: (list) => list.map((r) => r.id),
     note: limit.note,
