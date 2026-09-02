@@ -66,10 +66,36 @@ export const MAX_PENDING_PROPOSALS = 3;
 export const APPROVAL_TIMEOUT_MS = 60_000;
 export const HEALTHY_WINDOW_MS = 20_000;
 
-/** Retention. Ring buffers, sized in simulated time or record count. */
+/**
+ * Retention. Ring buffers, sized in simulated time or record count.
+ *
+ * Trace retention has to be read together with the capture rates below. A log line that cites a
+ * trace id is only useful while that trace still exists, and traces evict far faster than logs
+ * because there are more of them. Measured on the live page before these numbers were chosen:
+ * capturing every failure at 450 rps produced ~40 traces a second, so a 400-trace buffer held ten
+ * seconds of history and 96% of correlation ids pointed at nothing.
+ */
 export const METRIC_RETENTION_SEC = 1800;
 export const LOG_RETENTION = 4000;
-export const TRACE_RETENTION = 400;
+export const TRACE_RETENTION = 3000;
 
-/** Fraction of requests captured as a full trace. Errors are always captured. */
-export const TRACE_SAMPLE_RATE = 0.02;
+/** Fraction of successful requests captured as a full trace. */
+export const TRACE_SAMPLE_RATE = 0.002;
+
+/**
+ * Failed requests are sampled too, not captured wholesale.
+ *
+ * Tail-based sampling with a per-second cap is what real tracing does, and without it a saturated
+ * service alone produces enough traces to evict the buffer every ten seconds. Four a second still
+ * gives an investigator dozens of failures to open within any window they care about.
+ */
+export const ERROR_TRACES_PER_SECOND = 4;
+
+/**
+ * Correlated error log lines per service per simulated second.
+ *
+ * One. Measured on the live page at two: correlated failures reached 853 of 991 log lines and
+ * buried the pool-saturation lines that actually explain the incident. The aggregate failure count
+ * belongs in the metrics; the log needs enough examples to follow, not every instance.
+ */
+export const CORRELATED_LOGS_PER_SECOND = 1;

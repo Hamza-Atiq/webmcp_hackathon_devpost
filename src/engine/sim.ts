@@ -1,5 +1,7 @@
 import {
   BASELINE_VARIATION,
+  CORRELATED_LOGS_PER_SECOND,
+  ERROR_TRACES_PER_SECOND,
   GATEWAY_TIMEOUT_MS,
   TICK_MS,
   TICK_SEC,
@@ -43,7 +45,12 @@ export interface Sim {
   remainder: Record<ServiceName, number>;
   /** Suppresses repeat log lines so a saturated pool does not emit 4 lines a second. */
   lastPoolLogSec: Record<ServiceName, number>;
+  /** Correlated error logs already emitted this simulated second, per service. */
+  correlatedThisSec: Record<ServiceName, number>;
+  /** Error traces already captured this simulated second, per service. */
+  errorTracesThisSec: Record<ServiceName, number>;
 }
+
 
 /** Utilisation above which queueing starts to cost noticeable latency. */
 const SATURATION_KNEE = 0.7;
@@ -66,12 +73,16 @@ export function createSim(world: World, store: Store): Sim {
   const acc = {} as Record<ServiceName, Accumulator>;
   const remainder = {} as Record<ServiceName, number>;
   const lastPoolLogSec = {} as Record<ServiceName, number>;
+  const correlatedThisSec = {} as Record<ServiceName, number>;
+  const errorTracesThisSec = {} as Record<ServiceName, number>;
   for (const name of SERVICE_NAMES) {
     acc[name] = newAccumulator(0);
     remainder[name] = 0;
     lastPoolLogSec[name] = -1;
+    correlatedThisSec[name] = 0;
+    errorTracesThisSec[name] = 0;
   }
-  return { world, store, acc, remainder, lastPoolLogSec };
+  return { world, store, acc, remainder, lastPoolLogSec, correlatedThisSec, errorTracesThisSec };
 }
 
 function percentile(sorted: number[], p: number): number {
@@ -163,9 +174,13 @@ export function tick(sim: Sim): void {
         failure = "service overloaded";
       }
 
-      // Background failure rate every real service has.
+      // Background failure rate every real service has. Flagged as routine: a healthy
+      // service returning the odd 500 is not news, and logging one every second would
+      // make every service look like it were in trouble.
+      let routine = false;
       if (!failed && world.rng.chance(0.002)) {
         failed = true;
+        routine = true;
         failure = "upstream returned 500";
       }
 
@@ -173,9 +188,32 @@ export function tick(sim: Sim): void {
       acc.requests += 1;
       if (failed) acc.errors += 1;
 
-      // Traces: a small sample, plus every failure, so the tail is always inspectable.
-      if (failed || world.rng.chance(TRACE_SAMPLE_RATE)) {
-        recordTrace(sim, name, latency, acquireMs, queryMs, failed, failure);
+      // Traces: a small sample of successes, plus failures up to a per-second cap. The
+      // `failed ||` short-circuit is deliberate — a failed request draws no sample number,
+      // and changing that would shift every subsequent draw and break replay (FR-1.5).
+      const capture = failed
+        ? sim.errorTracesThisSec[name] < ERROR_TRACES_PER_SECOND
+        : world.rng.chance(TRACE_SAMPLE_RATE);
+
+      if (capture) {
+        if (failed) sim.errorTracesThisSec[name] += 1;
+        const traceId = recordTrace(sim, name, latency, acquireMs, queryMs, failed, failure);
+
+        // A notable failure also says so in the log, carrying the trace id. This is the link
+        // that lets an agent move from "the logs mention timeouts" to "here is the request
+        // that timed out, and here is where its time went" (FR-4.2, FR-4.8). Emitted only
+        // alongside a captured trace, so the id it cites always exists when written.
+        if (failed && !routine && sim.correlatedThisSec[name] < CORRELATED_LOGS_PER_SECOND) {
+          sim.correlatedThisSec[name] += 1;
+          pushLog(store, {
+            id: nextId(world, "log"),
+            t: world.nowMs,
+            service: name,
+            level: "error",
+            message: `request failed after ${Math.round(latency)}ms: ${failure}`,
+            correlationId: traceId,
+          });
+        }
       }
     }
 
@@ -210,7 +248,7 @@ function recordTrace(
   queryMs: number,
   failed: boolean,
   failure: string,
-): void {
+): string {
   const { world, store } = sim;
   const children: Span[] = [];
   let cursor = 0;
@@ -245,8 +283,10 @@ function recordTrace(
     children: [],
   });
 
+  const traceId = nextId(world, "trc");
+
   pushTrace(store, {
-    id: nextId(world, "trc"),
+    id: traceId,
     t: world.nowMs,
     service,
     durationMs: totalMs,
@@ -260,6 +300,8 @@ function recordTrace(
       children,
     },
   });
+
+  return traceId;
 }
 
 function finaliseSecond(sim: Sim, second: number): void {
@@ -289,6 +331,8 @@ function finaliseSecond(sim: Sim, second: number): void {
     }
 
     sim.acc[name] = newAccumulator(second);
+    sim.correlatedThisSec[name] = 0;
+    sim.errorTracesThisSec[name] = 0;
   }
 
   // Detection runs on the second that has just closed, so an incident opens from the

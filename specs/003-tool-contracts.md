@@ -135,6 +135,32 @@ exemption was wrong and is removed. Whether an inventory id is *good* support fo
 a judgement for the human approver; the tool layer enforces provenance, not sufficiency, exactly
 as `spec.md` says of AC-4.
 
+### 5a. Traces expire before logs do, and the tools must say so
+
+Measured on the live page, not reasoned about. Logs and traces are both ring buffers, but traces
+are produced an order of magnitude faster, so their windows differ:
+
+| | Produced | Buffer | Window covered |
+|---|---|---|---|
+| Logs | ~1.8/s | 4000 | ~38 minutes |
+| Traces | ~10/s | 3000 | ~5 minutes |
+
+The first attempt captured every failed request and sampled 2% of successes, which at 450 rps gave
+~40 traces a second, a **ten-second** trace window, and **96% of correlation ids pointing at
+traces that no longer existed**. Failed requests are now sampled with a per-second cap and the
+success rate is lower, which brings every correlation id inside the investigation window: at 180
+seconds after onset, across four seeds, **every link resolves**.
+
+Beyond roughly five minutes they still expire, and that is left alone deliberately — every real
+observability stack retains traces for less time than logs, and distorting the simulation to hide
+that would be a worse lie than the limitation. It becomes a **tool contract** instead:
+
+- `get_trace` on an id that has aged out returns an instructive refusal, never an empty result:
+  *"Trace trc_00412 is no longer retained. Traces cover approximately the last 5 minutes; the log
+  entry that cited it is still available."*
+- `search_logs` marks each correlated entry with `trace_available: true | false`, so an agent can
+  see which links are worth following before spending a call on one.
+
 ---
 
 ## 6. Output bounding

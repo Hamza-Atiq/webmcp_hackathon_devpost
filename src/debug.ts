@@ -30,6 +30,9 @@ export interface ConsoleHarness {
   health(service?: ServiceName): unknown;
   incident(): unknown;
   timeline(): void;
+  runbooks(query?: string): void;
+  ownership(): void;
+  correlation(): void;
   watch(seconds?: number, step?: number): void;
   arc(): void;
 }
@@ -108,6 +111,48 @@ export function exposeConsoleHarness(): void {
           actor: e.actor,
           event: e.message,
         })),
+      );
+    },
+
+    runbooks(query) {
+      const found = engine.runbooks(query);
+      console.log(`${found.length} runbook(s) for ${query ? `"${query}"` : "any symptom"}:`);
+      console.table(
+        found.map((r) => ({ id: r.id, title: r.title, steps: r.steps.length })),
+      );
+      for (const r of found) {
+        console.log(`
+${r.id} — ${r.title}`);
+        r.steps.forEach((step, i) => console.log(`  ${i + 1}. ${step}`));
+      }
+    },
+
+    ownership() {
+      console.table(SERVICE_NAMES.map((name) => engine.ownership(name)));
+    },
+
+    /**
+     * Prove the log-to-trace link is real: take recent logs carrying a correlation id and
+     * confirm the trace it names actually exists, with matching service and timestamp.
+     */
+    correlation() {
+      const correlated = engine.store.logs.filter((l) => l.correlationId).slice(-10);
+      if (correlated.length === 0) {
+        console.log("No correlated logs yet — run agentops.advance(120) after an incident opens.");
+        return;
+      }
+      console.table(
+        correlated.map((log) => {
+          const trace = engine.store.traces.find((t) => t.id === log.correlationId);
+          return {
+            log: log.id,
+            correlationId: log.correlationId,
+            traceFound: trace ? "yes" : "NO — BROKEN LINK",
+            sameService: trace ? String(trace.service === log.service) : "-",
+            traceMs: trace ? Math.round(trace.durationMs) : "-",
+            message: log.message.slice(0, 46),
+          };
+        }),
       );
     },
 

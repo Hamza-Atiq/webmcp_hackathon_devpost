@@ -3,6 +3,8 @@ import { createWorld, scheduleConfigChange, type World } from "./world";
 import { createStore, latestMetric, type Store } from "./store";
 import { createSim, tick, type Sim } from "./sim";
 import { addTimelineEntry, setIncidentStatus } from "./incident";
+import { findRunbooks, runbookById, type Runbook } from "./runbooks";
+import { ownershipFor, type Ownership } from "./ownership";
 import { onset as s1Onset, seedHistory as s1SeedHistory } from "./scenarios/s1";
 import type { Incident, IncidentStatus, MetricPoint, ServiceName, TimelineEntry } from "./types";
 
@@ -63,6 +65,20 @@ export class Engine {
     return setIncidentStatus(this.world, status, actor);
   }
 
+  /** Written procedures, retrievable by symptom or service — FR-4.5. */
+  runbooks(query?: string, service?: ServiceName): Runbook[] {
+    return findRunbooks(query, service);
+  }
+
+  runbook(id: string): Runbook | undefined {
+    return runbookById(id);
+  }
+
+  /** Owning team and current on-call — FR-4.6. */
+  ownership(service: ServiceName): Ownership {
+    return ownershipFor(service);
+  }
+
   /** Append an observation to the incident timeline — FR-5.5. */
   recordTimelineEntry(actor: TimelineEntry["actor"], message: string): void {
     addTimelineEntry(this.world, actor, message);
@@ -104,6 +120,10 @@ export class Engine {
 
 export { SERVICE_NAMES } from "./world";
 export { classifySeverity, isBreaching, isRecovered, STATUS_ORDER } from "./incident";
+export { RUNBOOKS, findRunbooks, runbookById } from "./runbooks";
+export { OWNERSHIP, ownershipFor } from "./ownership";
+export type { Runbook } from "./runbooks";
+export type { Ownership } from "./ownership";
 export type {
   Deployment,
   Incident,

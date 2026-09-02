@@ -278,15 +278,18 @@ input {
 .rail-meters {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px 40px;
-  padding-bottom: 26px;
+  gap: 4px 40px;
 }
 
+/* The tick labels hang below the track on absolute position, so each meter reserves
+   its own room for them. Reserving it once on the container only works while the
+   meters sit side by side — when they stack, row one's labels land on row two. */
 .meter {
   display: grid;
   grid-template-columns: 78px 1fr 74px;
   align-items: center;
   gap: 12px;
+  padding-bottom: 30px;
 }
 
 .meter-label {
@@ -1072,8 +1075,11 @@ button.record:hover {
   }
 
   .rail-meters {
-    gap: 10px 40px;
-    padding-bottom: 24px;
+    gap: 2px 40px;
+  }
+
+  .meter {
+    padding-bottom: 28px;
   }
 }
 
