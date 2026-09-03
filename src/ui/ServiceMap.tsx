@@ -1,5 +1,5 @@
 import { isBreaching, isRecovered, SERVICE_NAMES, type Engine, type ServiceName } from "../engine";
-import { millis, pct } from "./format";
+import { millis, pct, rate } from "./format";
 
 /**
  * The service inventory, with the dependency edges that make one service's trouble
@@ -50,6 +50,7 @@ export function ServiceMap({
               <span className="service-name">{name}</span>
 
               <span className="service-readout">
+                <span>{point ? rate(point.requests) : "—"}</span>
                 <span>{point ? pct(point.errorRate, 1) : "—"}</span>
                 <span>{point ? millis(point.p99) : "—"}</span>
               </span>

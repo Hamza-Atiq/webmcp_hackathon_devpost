@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Engine, SERVICE_NAMES, ACTION_KINDS, MAX_REPLICAS } from "../src/engine";
+import { Engine, SERVICE_NAMES, ACTION_KINDS, MAX_REPLICAS, restingHeapFor } from "../src/engine";
 import { RECOVERY_ERROR_RATE, RECOVERY_P99_MS, TRAFFIC_SHIFT_MAX } from "../src/engine/constants";
 import { meanOver } from "../src/engine/store";
 
@@ -171,7 +171,12 @@ describe("parameters are clamped, not refused", () => {
     engine.world.services["checkout-service"].heapBytes = 400_000_000;
 
     engine.remediate("restart_service", "checkout-service", {}, "agent");
-    expect(engine.world.services["checkout-service"].heapBytes).toBe(0);
+
+    // Back to rest, not to empty: a fresh process still holds its buffers and caches.
+    // What matters for FR-9.3 is that whatever a leak accumulated is gone.
+    const resting = restingHeapFor("checkout-service");
+    expect(engine.world.services["checkout-service"].heapBytes).toBe(resting);
+    expect(resting).toBeLessThan(400_000_000);
 
     // The cost is paid up front and is visible: a restart makes the signals worse first.
     engine.advanceSeconds(4);

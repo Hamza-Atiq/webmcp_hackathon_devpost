@@ -168,7 +168,7 @@ export class Engine {
   }
 }
 
-export { SERVICE_NAMES } from "./world";
+export { SERVICE_NAMES, restingHeapFor } from "./world";
 export { classifySeverity, isBreaching, isRecovered, STATUS_ORDER } from "./incident";
 export { RUNBOOKS, findRunbooks, runbookById } from "./runbooks";
 export { OWNERSHIP, ownershipFor } from "./ownership";

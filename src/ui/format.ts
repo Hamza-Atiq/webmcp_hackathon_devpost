@@ -40,6 +40,11 @@ export function millis(value: number): string {
   return value >= 1000 ? `${(value / 1000).toFixed(2)}s` : `${Math.round(value)}ms`;
 }
 
+/** Throughput, in the unit an on-call engineer says out loud. */
+export function rate(value: number): string {
+  return `${Math.round(value)} rps`;
+}
+
 export function bytes(value: number): string {
   return `${(value / (1024 * 1024)).toFixed(0)} MB`;
 }

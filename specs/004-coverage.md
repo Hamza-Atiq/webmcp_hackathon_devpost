@@ -32,6 +32,7 @@ finished until it has been seen working.**
 | **G1** | FR-2.4a | `api-gateway`, `payment-service` and `inventory-service` have **no deployment history at all**, so `rollback_deployment` against them would be refused for want of a target. FR-2.4a says it must be executable on every service and "never refused for want of a target" — this is the trap scenarios 3 and 5 depend on. | Seed a prior deployment for the three missing services. |
 | **G2** | FR-5.2 | The manual scenario trigger does not exist and was **not assigned to any phase**. The environment only starts a scenario on its own at T+20s. A judge with three minutes cannot skip the wait. | Build with the scenario selector. |
 | **G3** | FR-12.3 | Runbooks and ownership now exist in the engine but are **not browsable in the interface**. FR-12.3 requires *all* FR-4 evidence to be browsable with no agent present. Adding them to the engine without the UI created this gap. | Two more evidence tabs. |
+| **G5** | FR-12.3 × FR-4.1 | 12.3 was recorded **done** on the strength of five evidence tabs, but metrics are an FR-4 source too and the interface drew only two of their signals. Request rate, p50, p95, CPU, memory and replica count were reachable **only through `get_metrics`** — the agent could see the traffic the environment was serving and a human could not. Found by a reader asking where the 450 rps was on screen, not by the audit. | A throughput chart and a vitals strip. |
 | **G4** | FR-3.4 | Speed independence holds by construction (fixed tick size, driver only varies tick count) but has **never been verified**. AC-12 depends on it. | A test that runs the same scenario at 1x and 60x and compares the evidence. |
 
 ---
@@ -74,7 +75,7 @@ finished until it has been seen working.**
 
 | Clause | Status | Phase |
 |---|---|---|
-| 4.1 metrics, queryable by window | partial — stored and charted; no query API | P3 |
+| 4.1 metrics, queryable by window | done — `get_metrics` for the agent; throughput charted and the remaining signals in the vitals strip for a human (G5) | |
 | 4.2 logs with correlation id, filterable | done | |
 | 4.3 traces, span trees | done | |
 | 4.4 deployments with author and diff | done | |
@@ -146,7 +147,7 @@ and verification at T+583s measured 0.24% and 112ms — verdict `passed`.
 |---|---|---|
 | 12.1 every agent action available to a human | partial — rollback only | P5 |
 | 12.2 one implementation, not two | done | UI calls the same engine methods |
-| 12.3 all evidence browsable with no agent | **done** — five tabs; runbooks and ownership added in `2b2a763` | |
+| 12.3 all evidence browsable with no agent | **done** — five tabs; runbooks and ownership added in `2b2a763`; the FR-4.1 metric signals added after G5 | |
 | 12.4 a human can complete an entire incident | partial — no postmortem yet | P6 |
 | 12.5 human actions need no approval | done | |
 
@@ -166,7 +167,7 @@ gets its unified source/actor treatment in P6.
 
 | Clause | Status |
 |---|---|
-| 14.1 `document.modelContext.registerTool` | done in code — twelve tools bound; **not yet seen registering**, which needs the Chrome flag |
+| 14.1 `document.modelContext.registerTool` | **done and seen** — 3 Sept 2026, Chrome 152 with `#enable-webmcp-testing`: the header reads WebMCP connected and DevTools → Application → WebMCP lists all fourteen tools |
 | 14.2 top-level only | done — no iframes |
 | 14.3 single page, no navigation | done — no router |
 | 14.4 registered exactly once | done — module-scope guard, outside React |

@@ -4,7 +4,7 @@ import { flagByKey } from "./flags";
 import { addTimelineEntry } from "./incident";
 import type { Store } from "./store";
 import type { ServiceName, TimelineEntry } from "./types";
-import { scheduleConfigChange, type World } from "./world";
+import { restingHeapFor, scheduleConfigChange, type World } from "./world";
 
 /**
  * The five remediation actions — FR-9.
@@ -151,7 +151,7 @@ function restartService(
    * production does and what makes FR-9.3's "temporary relief" observable later: the heap
    * is genuinely cleared, and in a leaking service it simply starts filling again.
    */
-  state.heapBytes = 0;
+  state.heapBytes = restingHeapFor(service);
   state.waiters = 0;
   state.connectionsInUse = 0;
   state.startedAtMs = world.nowMs;

@@ -14,10 +14,11 @@ import { AlarmRail } from "./AlarmRail";
 import { ServiceMap } from "./ServiceMap";
 import { MetricChart } from "./MetricChart";
 import { EvidenceTabs } from "./EvidenceTabs";
+import { Vitals } from "./Vitals";
 import { IncidentRecord } from "./IncidentRecord";
 import { ApprovalPrompt } from "./ApprovalPrompt";
 import { session } from "../session";
-import { millis, pct, simClock } from "./format";
+import { millis, pct, rate, simClock } from "./format";
 
 /**
  * Three regions, and the order is the argument the product makes: the environment you
@@ -103,6 +104,18 @@ export function App() {
           </h2>
 
           <div className="charts">
+            {/*
+              Rate, errors, duration — the three signals in the order an on-call engineer
+              reads them. Throughput comes first because it is the question that decides
+              whether the other two mean anything: traffic holding steady while errors
+              climb is a different incident from traffic doubling.
+            */}
+            <MetricChart
+              points={points}
+              field="requests"
+              title="Throughput"
+              format={rate}
+            />
             <MetricChart
               points={points}
               field="p99"
@@ -126,6 +139,8 @@ export function App() {
               ]}
             />
           </div>
+
+          <Vitals point={engine.health(service)} />
 
           <EvidenceTabs engine={engine} service={service} />
         </section>

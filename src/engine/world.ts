@@ -37,6 +37,25 @@ interface ServiceDef {
 const HEAP_LIMIT = 512 * 1024 * 1024;
 
 /**
+ * Heap a service holds when it is doing nothing wrong.
+ *
+ * A process at rest is not empty: it carries buffers, caches and connection state
+ * roughly in proportion to the traffic it serves. Seeding this matters for two
+ * reasons. FR-0's healthy table quotes memory as a percentage under 60%, which a
+ * permanently empty heap reports as 0% — a dead field on the dashboard that reads as
+ * unimplemented rather than healthy. And FR-9.3's "temporary relief" from a restart is
+ * only observable against a floor: a leak has to climb away from somewhere.
+ */
+function restingHeapBytes(baseRps: number): number {
+  return Math.round(HEAP_LIMIT * (0.28 + (baseRps / 450) * 0.14));
+}
+
+/** The resting heap of a named service, for the restart that returns it there. */
+export function restingHeapFor(name: ServiceName): number {
+  return restingHeapBytes(SERVICE_DEFS[name].baseRps);
+}
+
+/**
  * Calibrated so the healthy state sits inside every FR-0 threshold while leaving
  * checkout-service's shared pool close enough to its knee that the 50 -> 5 regression
  * pushes it past saturation. See the commit that raised baseline throughput to 450 rps
@@ -172,7 +191,7 @@ export function createWorld(seed: number): World {
       config: { ...def.config },
       dependencies: [...def.dependencies],
       inboundRps: def.baseRps,
-      heapBytes: 0,
+      heapBytes: restingHeapBytes(def.baseRps),
       waiters: 0,
       connectionsInUse: 0,
       trafficShiftedAway: 0,
