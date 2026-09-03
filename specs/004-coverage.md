@@ -47,17 +47,17 @@ finished until it has been seen working.**
 | 1.4 config change acts through simulation | done | no scenario-keyed lookup anywhere |
 | 1.5 seeded, replayable | done | `determinism-guard.test.ts` + replay tests |
 
-## FR-2 — Scenario library · **partial**
+## FR-2 — Scenario library · **done**
 
 | Clause | Status | Phase |
 |---|---|---|
-| 2.1 five scenarios selectable | partial — s1 only | P5 |
-| 2.2 one active, switching resets | open | P5 |
-| 2.3 each defines mechanism, evidence, runbook, fix | partial — runbooks for all five exist; mechanisms 2–5 do not | P5 |
-| 2.4 scenarios 3 and 5 have no deploy in window | open | P5 |
-| **2.4a rollback always executable** | **violated — see G1** | now |
-| 2.4b scenario 4 inverse trap | open | P5 |
-| 2.4c no fix works for more than two scenarios | open — verified by the matrix test | P5 |
+| 2.1 five scenarios selectable | done — registry + topbar selector; labels are numbers so the interface does not disclose what the tools withhold | |
+| 2.2 one active, switching resets | done — `resetSession(scenario)`; a new scenario is a new run from a healthy T+0 | |
+| 2.3 each defines mechanism, evidence, runbook, fix | done — five mechanisms: pool queue, heap/collector, provider queue, lock contention, saturation | |
+| 2.4 scenarios 3 and 5 have no deploy in window | done — neither onset writes a deployment | |
+| **2.4a rollback always executable** | done — closed by G1 | |
+| 2.4b scenario 4 inverse trap | done — `dep` on user-service at onset, innocent, and measured to change nothing | |
+| 2.4c no fix works for more than two scenarios | done — asserted over the matrix: rollback fixes 2, flag fixes 2, scaling fixes 1 | |
 | 2.5 no tool discloses the scenario | done so far | leak-tested in runbooks; must hold for every tool in P3 |
 
 ## FR-3 — Simulated clock · **partial**
@@ -118,13 +118,14 @@ unstarted work in the spec.
 
 | Clause | Status | Phase |
 |---|---|---|
-| 9.1 effects apply over time, never instantly | done for rollback | recovery-shape tests |
-| 9.2 outcome matrix | open | P5 |
+| 9.1 effects apply over time, never instantly | done | recovery-shape tests |
+| 9.2 outcome matrix | **done — measured**, 23 cells over five scenarios and two seeds, control vs treated | |
 | 9.2a pool is shared, not per-replica | done | |
-| 9.3 restart is temporary relief in S2 | open | P5 |
-| 9.4 scaling worsens S4 | open | P5 |
-| 9.4a S4 rollback hits an unrelated deploy | open | P5 |
-| 9.5 wrong service, no effect | open | P5 |
+| 9.2b "spreads CPU load" names a mechanism that bites | done — worker contention; added after scaling measured as doing nothing | |
+| 9.3 restart is temporary relief in S2 | done — asserted as a shape over time: recovered at +45s, degraded again at +285s | |
+| 9.4 scaling worsens S4 | done — 9.0% → 22.4%, p99 4.7s → 6.0s, two seeds | |
+| 9.4a S4 rollback hits an unrelated deploy | done | |
+| 9.5 wrong service, no effect | done — the matrix's "none" cells are exactly this | |
 
 ## FR-10 — Verification · **done**
 
@@ -140,15 +141,24 @@ unstarted work in the spec.
 Verified live: a human rollback at T+472s minted `act_0001` with error rate 9.28% and p99 3106ms,
 and verification at T+583s measured 0.24% and 112ms — verdict `passed`.
 
-## FR-11 — Incident closure · **open** → P6
+## FR-11 — Incident closure · **done**
+
+| Clause | Status |
+|---|---|
+| 11.1 `update_incident_status`, Class B, records the actor | done — not gated; writes to the record only, asserted |
+| 11.2 postmortem contents | done — timeline, services, severity, root cause, evidence, actions with approver, verification, time to resolution |
+| 11.2a root cause is the approved hypothesis, attributed | done — and it says "Not recorded" when nobody proposed one |
+| 11.3 assembled from records, never narrated | done |
+| 11.4 displayed and copyable | done — Postmortem block in the record column |
+
 ## FR-12 — Human parity · **partial**
 
 | Clause | Status | Phase |
 |---|---|---|
-| 12.1 every agent action available to a human | partial — rollback only | P5 |
+| 12.1 every agent action available to a human | done — all five, with parameters; the flag picker was added after `disable_feature_flag` proved unreachable for a human in scenarios 3 and 4 | |
 | 12.2 one implementation, not two | done | UI calls the same engine methods |
 | 12.3 all evidence browsable with no agent | **done** — five tabs; runbooks and ownership added in `2b2a763`; the FR-4.1 metric signals added after G5 | |
-| 12.4 a human can complete an entire incident | partial — no postmortem yet | P6 |
+| 12.4 a human can complete an entire incident | done — asserted as a whole arc, detect through postmortem, with no tool call from an agent | |
 | 12.5 human actions need no approval | done | |
 
 ## FR-13 — Audit trail · **done for Class A**
@@ -160,8 +170,8 @@ DevTools panel, so FR-13.5 keys citability on how a call arrived rather than on 
 cannot verify. FR-13.3 (refusals recorded with their reason) and FR-13.4 (which tools have gone
 unused) are both covered by tests.
 
-Class B and C operations join the same trail in P4; the interface renders it as a flat list and
-gets its unified source/actor treatment in P6.
+Class B and C operations join the same trail, and the interface renders it live in the Activity
+block. All sixteen tools are classified: twelve A, three B, and one C.
 
 ## FR-14 — Tool registration · **partial** → P3
 
