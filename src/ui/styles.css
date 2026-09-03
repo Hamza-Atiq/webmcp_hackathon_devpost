@@ -482,6 +482,25 @@ input {
   color: var(--ink-faint);
 }
 
+.postmortem-controls {
+  display: flex;
+  gap: 8px;
+  padding: 0 14px 10px;
+}
+
+.postmortem {
+  margin: 0;
+  padding: 12px 14px 14px;
+  max-height: 320px;
+  overflow: auto;
+  font: 400 11px/1.55 var(--mono);
+  color: var(--ink-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-top: 1px solid var(--rule);
+  background: var(--void);
+}
+
 .action-row {
   display: flex;
   flex-direction: column;

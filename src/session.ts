@@ -25,6 +25,8 @@ export interface Session {
   evidence: EvidenceRegistry;
   audit: AuditLog;
   proposals: ProposalStore;
+  /** FR-11.4 — the most recent postmortem, so the interface can display it. */
+  postmortem: string | null;
 }
 
 function create(scenario: ScenarioId): Session {
@@ -35,6 +37,7 @@ function create(scenario: ScenarioId): Session {
     evidence: new EvidenceRegistry(),
     audit: new AuditLog(),
     proposals: new ProposalStore(),
+    postmortem: null,
   };
 }
 

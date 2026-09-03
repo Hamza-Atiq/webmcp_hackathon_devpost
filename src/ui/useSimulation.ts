@@ -3,6 +3,7 @@ import { Engine, type ScenarioId, type ServiceName } from "../engine";
 import { TICK_MS, type SpeedMultiplier } from "../engine/constants";
 import type { AuditEntry } from "../mcp/audit";
 import type { Proposal } from "../mcp/proposals";
+import { assemblePostmortem } from "../mcp/postmortem";
 import { ACTION_KINDS, type ActionKind, type RemediationParams } from "../engine";
 import {
   cancelOpenProposals,
@@ -70,6 +71,9 @@ export interface Simulation {
   awaitingApproval: Proposal | undefined;
   approve(id: string): void;
   deny(id: string, reason: string): void;
+  /** FR-11.4, FR-12.4 — a human writes the same postmortem the agent's tool writes. */
+  postmortem: string | null;
+  writePostmortem(): void;
 }
 
 export function useSimulation(): Simulation {
@@ -215,6 +219,25 @@ export function useSimulation(): Simulation {
     [record],
   );
 
+  /**
+   * FR-12.2 — one implementation. This calls the same assembler `generate_postmortem`
+   * calls, so a postmortem written by a person and one written by an agent are the same
+   * document from the same records, and neither can drift from the other.
+   */
+  const writePostmortem = useCallback(() => {
+    const current = session();
+    const assembled = assemblePostmortem(current);
+    current.postmortem = assembled.ok ? assembled.text : null;
+    record(
+      "generate_postmortem",
+      "",
+      assembled.ok ? "Postmortem written from the incident record" : assembled.error,
+      assembled.ok,
+      "B",
+    );
+    repaint();
+  }, [record]);
+
   const setStatus = useCallback(
     (status: "investigating" | "identified" | "mitigating" | "resolved") => {
       const { engine } = session();
@@ -259,6 +282,8 @@ export function useSimulation(): Simulation {
     awaitingApproval: current.proposals.awaitingApproval,
     approve,
     deny,
+    postmortem: current.postmortem,
+    writePostmortem,
   };
 }
 

@@ -49,6 +49,8 @@ export function IncidentRecord({
   audit,
   service,
   proposals,
+  postmortem,
+  onPostmortem,
   onRemediate,
   onStatus,
 }: {
@@ -56,9 +58,12 @@ export function IncidentRecord({
   audit: readonly AuditEntry[];
   service: ServiceName;
   proposals: readonly Proposal[];
+  postmortem: string | null;
+  onPostmortem(): void;
   onRemediate(kind: ActionKind, service: ServiceName, params?: RemediationParams): void;
   onStatus(status: ChosenStatus): void;
 }) {
+  const [copied, setCopied] = useState(false);
   /*
    * Enabled flags on the selected service. A flag already switched off is not an action
    * anyone can take, and offering it would be offering a no-op.
@@ -210,6 +215,48 @@ export function IncidentRecord({
           <p className="empty">
             Nothing proposed. An agent must cite two independent pieces of evidence before it can
             propose anything at all.
+          </p>
+        )}
+      </section>
+
+      {/*
+        FR-11.4 — the postmortem is displayed and can be copied. FR-12.4 — a human can
+        write one with no agent involved, and it is the same document from the same
+        assembler, not a second implementation that will drift.
+      */}
+      <section className="block">
+        <h3 className="block-head">
+          Postmortem
+          <span className="block-note">{postmortem ? "written" : "not written"}</span>
+        </h3>
+
+        <div className="postmortem-controls">
+          <button type="button" className="ghost" onClick={onPostmortem}>
+            {postmortem ? "Rewrite from the record" : "Write postmortem"}
+          </button>
+          {postmortem && (
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => {
+                void navigator.clipboard?.writeText(postmortem).then(
+                  () => setCopied(true),
+                  () => setCopied(false),
+                );
+              }}
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+          )}
+        </div>
+
+        {postmortem ? (
+          <pre className="postmortem">{postmortem}</pre>
+        ) : (
+          <p className="empty">
+            Assembled from the incident record, the evidence retrieved and the actions applied. The
+            root cause it records is the diagnosis a human approved, attributed to whoever wrote it —
+            never a finding of the system.
           </p>
         )}
       </section>

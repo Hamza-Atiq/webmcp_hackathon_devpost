@@ -192,6 +192,8 @@ export function App() {
             <span className="region-note">human · no agent required</span>
           </h2>
           <IncidentRecord
+            postmortem={sim.postmortem}
+            onPostmortem={sim.writePostmortem}
             engine={engine}
             audit={sim.audit}
             service={service}

@@ -3,7 +3,8 @@ import { Engine } from "../src/engine";
 import { SIZE_CEILING, SIZE_TARGET } from "../src/mcp/bounded";
 import { toText, type ToolResult } from "../src/mcp/contracts";
 import { ALL_TOOLS, READ_ONLY_TOOLS } from "../src/mcp/schemas";
-import { invokeTool, TOOL_NAMES } from "../src/mcp/register";
+import {
+  SIDE_EFFECT_CLASS, invokeTool, TOOL_NAMES } from "../src/mcp/register";
 import { resetSession, session } from "../src/session";
 import * as tools from "../src/mcp/tools/readonly";
 
@@ -353,13 +354,22 @@ describe("declarations", () => {
     expect([...TOOL_NAMES].sort()).toEqual(ALL_TOOLS.map((t) => t.name).sort());
   });
 
-  it("declares fourteen tools: twelve that read, one that proposes, one that changes", () => {
-    // FR-0 — exactly one Class C tool is the entire surface through which the environment
-    // can change, and FR-8 gates it.
-    expect(ALL_TOOLS).toHaveLength(14);
+  it("declares sixteen tools, and exactly one of them can change the environment", () => {
+    /*
+     * FR-0 — the count is not the point; the shape is. Twelve tools read, three write to
+     * records only, and **one** reaches the environment. That single Class C tool is the
+     * entire surface through which anything can change, and FR-8 gates it. If this list
+     * ever grows a second entry, the approval gate has stopped being the only door.
+     */
+    expect(ALL_TOOLS).toHaveLength(16);
     expect(ALL_TOOLS.filter((t) => t.annotations.readOnlyHint === false).map((t) => t.name)).toEqual([
       "propose_remediation",
       "execute_remediation",
+      "update_incident_status",
+      "generate_postmortem",
+    ]);
+    expect(Object.entries(SIDE_EFFECT_CLASS).filter(([, cls]) => cls === "C")).toEqual([
+      ["execute_remediation", "C"],
     ]);
   });
 });

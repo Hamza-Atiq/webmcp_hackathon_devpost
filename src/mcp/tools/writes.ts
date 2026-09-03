@@ -4,6 +4,9 @@ import { missingParam, ok, refuse, unknownValue, type ToolResult } from "../cont
 import { validateEvidence } from "../proposals";
 import type { Session } from "../../session";
 import type { Args } from "./readonly";
+import { assemblePostmortem } from "../postmortem";
+import { STATUS_ORDER } from "../../engine";
+import type { IncidentStatus } from "../../engine";
 
 /**
  * The two tools that change something — `propose_remediation` (Class B) and
@@ -176,6 +179,65 @@ export async function executeRemediation(
         `Effects apply through the simulation over time — no action recovers instantly. Call ` +
         `verify_remediation({ action_id: "${outcome.action.id}" }) after the signals have had a ` +
         `chance to move, and read the verdict rather than assuming this worked.`,
+    },
+    [],
+  );
+}
+
+/**
+ * FR-11.1 — move the incident through its lifecycle.
+ *
+ * Class B: it writes to the incident record and cannot touch a single simulated service,
+ * which is why it is not gated. Saying an incident is being investigated does not stop it
+ * happening, and requiring a human to approve a status change would make the gate look
+ * like paperwork rather than the one thing it is for.
+ */
+export function updateIncidentStatus(session: Session, args: Args): ToolResult {
+  const status = args.status;
+  if (typeof status !== "string") {
+    return missingParam("status", 'update_incident_status({ status: "investigating" })');
+  }
+  if (!STATUS_ORDER.includes(status as IncidentStatus)) {
+    return unknownValue("status", status, STATUS_ORDER);
+  }
+
+  const result = session.engine.setIncidentStatus(status as IncidentStatus, "agent");
+  if (!result.ok) return refuse(result.error);
+
+  /*
+   * No evidence ids: a status change produces no observation to cite. Citing the record
+   * you just wrote as evidence for the thing you wrote it about is circular, and FR-7.3
+   * only accepts ids that came from a *reading* of the environment.
+   */
+  return ok(
+    {
+      incident_id: session.engine.incident?.id ?? null,
+      status,
+      note: "Recorded on the incident timeline, attributed to the agent.",
+    },
+    [],
+  );
+}
+
+/**
+ * FR-11.2 — write up what happened, from the record rather than from memory.
+ *
+ * Class B for the same reason: it reads the incident, the evidence registry and the audit
+ * trail, and writes a document. It states no root cause of its own — it reports the
+ * hypothesis a human approved, attributed and labelled (FR-11.2a), which means it can
+ * faithfully record a diagnosis that turned out to be wrong.
+ */
+export function generatePostmortem(session: Session): ToolResult {
+  const assembled = assemblePostmortem(session);
+  if (!assembled.ok) return refuse(assembled.error);
+
+  session.postmortem = assembled.text;
+  return ok(
+    {
+      postmortem: assembled.text,
+      note:
+        "Also displayed in the interface, where a human can read and copy it. The root cause " +
+        "recorded is the approved hypothesis attributed to its author, not a finding of the system.",
     },
     [],
   );

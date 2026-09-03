@@ -4,7 +4,12 @@ import { refuse, type ToolResult } from "./contracts";
 import { ALL_TOOLS, type ToolName } from "./schemas";
 import type { Args } from "./tools/readonly";
 import * as readonly from "./tools/readonly";
-import { executeRemediation, proposeRemediation } from "./tools/writes";
+import {
+  executeRemediation,
+  generatePostmortem,
+  proposeRemediation,
+  updateIncidentStatus,
+} from "./tools/writes";
 import type { SideEffectClass } from "./audit";
 
 /**
@@ -68,10 +73,12 @@ const HANDLERS: Record<ToolName, Handler> = {
   verify_remediation: (s, args) => readonly.verifyRemediation(s.engine, args),
   propose_remediation: (s, args) => proposeRemediation(s, args),
   execute_remediation: (s, args, options) => executeRemediation(s, args, options),
+  update_incident_status: (s, args) => updateIncidentStatus(s, args),
+  generate_postmortem: (s) => generatePostmortem(s),
 };
 
 /** FR-0's classes, and the reason `execute_remediation` is gated and nothing else is. */
-const SIDE_EFFECT_CLASS: Record<ToolName, SideEffectClass> = {
+export const SIDE_EFFECT_CLASS: Record<ToolName, SideEffectClass> = {
   list_services: "A",
   get_service_health: "A",
   get_metrics: "A",
@@ -86,6 +93,8 @@ const SIDE_EFFECT_CLASS: Record<ToolName, SideEffectClass> = {
   verify_remediation: "A",
   propose_remediation: "B",
   execute_remediation: "C",
+  update_incident_status: "B",
+  generate_postmortem: "B",
 };
 
 export const TOOL_NAMES: ToolName[] = ALL_TOOLS.map((tool) => tool.name);

@@ -332,6 +332,43 @@ export const WRITE_TOOLS = [
     },
     annotations: { readOnlyHint: false },
   },
+  {
+    name: "update_incident_status",
+    title: "Update the incident status",
+    description:
+      "Move the open incident through its lifecycle — investigating, identified, mitigating, " +
+      "resolved — so the record reflects where the response actually is. Writes to the incident " +
+      "record only and changes nothing about the environment, so it is never gated on approval. " +
+      "Resolving is refused while the signals are still outside the recovery thresholds: an " +
+      "incident is closed by the measurements, not by an opinion that it is over.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["investigating", "identified", "mitigating", "resolved"],
+          description: "The stage the response has reached.",
+        },
+      },
+      required: ["status"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false },
+  },
+  {
+    name: "generate_postmortem",
+    title: "Write the postmortem",
+    description:
+      "Assemble a written postmortem from what was actually recorded: the timeline, the affected " +
+      "services and severity, the diagnosis a human approved and who wrote it, the evidence cited, " +
+      "the actions taken and who approved them, the verification result, and the time to " +
+      "resolution. It states no root cause of its own — it reports the approved hypothesis, " +
+      "attributed and labelled as a claim, so a postmortem can faithfully record a diagnosis that " +
+      "turned out to be wrong. Call it once the incident is understood; it is also shown in the " +
+      "interface for a human to read and copy.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: false },
+  },
 ] as const satisfies readonly ToolDeclaration[];
 
 export const ALL_TOOLS = [...READ_ONLY_TOOLS, ...WRITE_TOOLS];
