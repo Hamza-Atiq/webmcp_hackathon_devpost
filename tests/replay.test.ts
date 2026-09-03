@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Engine } from "../src/engine";
+import { Engine, SCENARIO_IDS, type ScenarioId } from "../src/engine";
 import { HEALTHY_WINDOW_MS, TICKS_PER_SIM_SECOND } from "../src/engine/constants";
 import { SERVICE_NAMES } from "../src/engine/world";
 
@@ -20,8 +20,8 @@ import { SERVICE_NAMES } from "../src/engine/world";
  * multiplier actually varies. 1 stands for 1x, 4 for 10x, 240 for 60x, and 300 is the
  * driver's per-frame ceiling after a backgrounded tab.
  */
-function runInBatches(ticksPerBatch: number, seed = 42): Engine {
-  const engine = new Engine(seed, { autoStart: { id: "s1", atMs: HEALTHY_WINDOW_MS } });
+function runInBatches(ticksPerBatch: number, seed = 42, scenario: ScenarioId = "s1"): Engine {
+  const engine = new Engine(seed, { autoStart: { id: scenario, atMs: HEALTHY_WINDOW_MS } });
   const totalTicks = 240 * TICKS_PER_SIM_SECOND;
 
   let done = 0;
@@ -75,6 +75,56 @@ describe("speed independence — FR-3.4", () => {
   it("holds across seeds, so the match is not a coincidence of one run", () => {
     for (const seed of [1, 7, 20260904]) {
       expect(evidence(runInBatches(240, seed))).toEqual(evidence(runInBatches(1, seed)));
+    }
+  });
+
+  /*
+   * Every scenario, not just the one this test was written for.
+   *
+   * Each mechanism carries state across ticks — a pool queue, a heap, a provider queue, a
+   * lock wait that depends on the replica count — and any of them could have introduced a
+   * dependency on how many ticks a batch happens to contain. Scenario 1 passing says
+   * nothing about the other four, and a judge running any of them twice must see the same
+   * story (AC-12).
+   */
+  it("holds for all five scenarios, whose mechanisms carry different state", () => {
+    for (const scenario of SCENARIO_IDS) {
+      const oneX = evidence(runInBatches(1, 42, scenario));
+      for (const batch of [4, 240, 300]) {
+        expect(
+          evidence(runInBatches(batch, 42, scenario)),
+          `${scenario} at batch size ${batch}`,
+        ).toEqual(oneX);
+      }
+    }
+  });
+
+  it("opens every scenario's incident at the same simulated moment at any batch size", () => {
+    for (const scenario of SCENARIO_IDS) {
+      const openedAt = runInBatches(1, 42, scenario).incident?.openedAt;
+      expect(openedAt, `${scenario} opened no incident at all`).toBeDefined();
+
+      for (const batch of [4, 240, 300]) {
+        expect(
+          runInBatches(batch, 42, scenario).incident?.openedAt,
+          `${scenario} at batch size ${batch}`,
+        ).toBe(openedAt);
+      }
+    }
+  });
+
+  /*
+   * The determinism claim a judge actually makes: reload the page, run it again, get the
+   * same incident. Two engines built the same way with no shared state must agree on
+   * every observable, which is a different property from batch independence — that one is
+   * about the driver, this one is about the seed.
+   */
+  it("replays identically from a fresh engine, which is what reloading the page does", () => {
+    for (const scenario of SCENARIO_IDS) {
+      expect(
+        evidence(runInBatches(4, 20260904, scenario)),
+        `${scenario} differed between two identical runs`,
+      ).toEqual(evidence(runInBatches(4, 20260904, scenario)));
     }
   });
 });

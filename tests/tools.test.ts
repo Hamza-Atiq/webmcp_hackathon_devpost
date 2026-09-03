@@ -86,6 +86,22 @@ describe("output bounds — FR-0", () => {
     expect(result.evidence_ids).toEqual(data.entries.map((e) => e.id));
   });
 
+  it("names the constraint that actually bound the answer, not one that also applied", () => {
+    /*
+     * Found on the live site: `search_logs({ limit: 10000 })` returned six of six hundred
+     * entries while reporting only that the limit had been clamped to fifty. Both facts
+     * were true and the wrong one was reported, so an agent would read six as "six
+     * matched" — or ask for fifty again and get six again, forever.
+     */
+    const engine = investigating();
+    const result = expectOk(tools.searchLogs(engine, { limit: 10000 }));
+
+    expect(result.returned_count!).toBeLessThan(50);
+    expect(result.narrow_by).toContain("clamped");
+    expect(result.narrow_by, "the size budget went unmentioned").toContain(String(SIZE_TARGET));
+    expect(result.narrow_by).toContain(`Returned ${result.returned_count}`);
+  });
+
   it("gives up whole log lines rather than the link between logs and traces", () => {
     /*
      * The bounded case, not the small one. An earlier drop order stripped correlation_id

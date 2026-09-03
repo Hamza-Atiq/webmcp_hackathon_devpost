@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { ACTION_KINDS, Engine, SCENARIO_IDS, type ActionKind, type ScenarioId } from "../src/engine";
 import { RECOVERY_ERROR_RATE, RECOVERY_P99_MS } from "../src/engine/constants";
 import { meanOver } from "../src/engine/store";
+import { invokeTool } from "../src/mcp/register";
+import { resetSession, session } from "../src/session";
 import type { ServiceName, Span } from "../src/engine";
 
 /**
@@ -311,3 +313,66 @@ describe("a failed span is the span that failed — FR-4.3", () => {
 function flatten(span: Span): Span[] {
   return [span, ...span.children.flatMap(flatten)];
 }
+
+/**
+ * FR-2.5 — no tool response, at any time, discloses the active scenario.
+ *
+ * Swept over every scenario and every read-only tool, because the requirement is about
+ * the whole surface and a single leak anywhere voids it. It is easy to add one by
+ * accident: a log line that names the mechanism, a runbook ranked so highly it can only
+ * mean one thing, a summary written for the developer rather than the reader.
+ *
+ * What is forbidden is a *label* — the scenario's id or a name for its category. Symptoms
+ * are not leaks: "pool exhausted" is what the environment measured, and an agent that
+ * reasons from it is doing the work rather than being told the answer.
+ */
+describe("no tool response names the scenario — FR-2.5", () => {
+  const FORBIDDEN = [
+    ...SCENARIO_IDS,
+    "scenario 1",
+    "scenario 2",
+    "scenario 3",
+    "scenario 4",
+    "scenario 5",
+    "config regression",
+    "resource exhaustion",
+    "dependency failure",
+    "bad migration",
+    "capacity scenario",
+  ];
+
+  it("holds for every read-only tool in every scenario", async () => {
+    for (const id of SCENARIO_IDS) {
+      resetSession();
+      const { engine } = session();
+      engine.advanceSeconds(30);
+      engine.startScenario(id);
+      engine.advanceSeconds(180);
+
+      const service = engine.incident?.affectedServices[0] ?? "checkout-service";
+      const calls: Array<[string, Record<string, unknown>]> = [
+        ["list_services", {}],
+        ["get_service_health", { service }],
+        ["get_metrics", { service, metric: "p99" }],
+        ["search_logs", { service, limit: 20 }],
+        ["list_traces", { service, limit: 10 }],
+        ["list_recent_deployments", { service }],
+        ["get_runbook", { symptom: "latency" }],
+        ["get_service_ownership", { service }],
+        ["get_incident", {}],
+      ];
+
+      for (const [tool, args] of calls) {
+        const result = await invokeTool(tool, args, { source: "webmcp", actor: "agent" });
+        const text = JSON.stringify(result).toLowerCase();
+
+        for (const term of FORBIDDEN) {
+          expect(
+            text.includes(term.toLowerCase()),
+            `${id}: ${tool} disclosed "${term}"`,
+          ).toBe(false);
+        }
+      }
+    }
+  });
+});

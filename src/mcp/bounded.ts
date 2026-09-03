@@ -52,6 +52,23 @@ export function bounded<T>(input: BoundInput<T>): ToolOk {
     const truncated = view.length < total || reducerCount > 0;
     const notes: string[] = [];
     if (input.note) notes.push(input.note);
+
+    /*
+     * Name the constraint that actually bound the answer.
+     *
+     * Found live: `search_logs({ limit: 10000 })` returned **6** of 600 entries while
+     * saying "limit was clamped to the maximum of 50" — true, and not the reason. The
+     * size budget is what stopped it at six, and an agent reading only the clamp would
+     * conclude six was all that matched, or ask for fifty again and get six again. A
+     * bound that misreports itself is worse than a tighter bound.
+     */
+    if (view.length < capped.length) {
+      notes.push(
+        `Returned ${view.length} of the ${capped.length} records allowed here: the response is ` +
+          `bounded to about ${SIZE_TARGET} characters, and the rest did not fit.`,
+      );
+    }
+
     if (truncated) notes.push(input.narrowBy);
 
     const result = truncated
