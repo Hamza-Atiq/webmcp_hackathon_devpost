@@ -45,12 +45,35 @@ export function session(): Session {
 
 export function resetSession(): void {
   /*
-   * Timers are cleared before the store is dropped. An approval timer from the previous
-   * run would otherwise fire into a world that no longer exists and expire a proposal
-   * nobody can see (FR-15.2, FR-15.3).
+   * Cancellation comes first, and this is not tidiness. `dispose` drops the settler for
+   * every waiting proposal, so a reset while an agent sat blocked on
+   * `execute_remediation` would leave that call hanging for the life of the page: the
+   * prompt is gone, no click can ever arrive, and the timer that would have expired it
+   * has just been cleared. Cancelling settles those calls as `cancelled` first, which is
+   * what FR-8.1's "settled by exactly one of four events" requires to stay true across a
+   * reset (FR-15.2, FR-15.3).
    */
+  cancelOpenProposals("the environment was reset");
   current.proposals.dispose();
   current = create();
+  notifySession();
+}
+
+/**
+ * FR-8.0 — an open proposal is a question about an incident.
+ *
+ * When that incident is resolved, or the world moves out from under it, the question can
+ * no longer be answered honestly: approving it would apply a remediation to a situation
+ * nobody diagnosed. Cancelling settles the agent's blocked call with a reason instead of
+ * leaving a prompt on screen for an incident that is over.
+ *
+ * It lives here rather than in the engine because the engine has no knowledge of
+ * proposals and should keep none — and it lives outside React because the agent-facing
+ * closure tools in P6 must reach the same code the dashboard's controls do.
+ */
+export function cancelOpenProposals(reason: string): void {
+  if (current.proposals.open.length === 0) return;
+  current.proposals.cancelOpen(reason, current.engine.world.nowMs);
   notifySession();
 }
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { invokeTool, TOOL_NAMES } from "../src/mcp/register";
-import { resetSession, session } from "../src/session";
+import { cancelOpenProposals, resetSession, session } from "../src/session";
 import { ProposalStore } from "../src/mcp/proposals";
 import { APPROVAL_TIMEOUT_MS, MAX_PENDING_PROPOSALS } from "../src/engine/constants";
 import type { ToolResult } from "../src/mcp/contracts";
@@ -403,5 +403,78 @@ describe("the failure test for FR-8.3", () => {
 
     // And it really did reach the gate rather than being turned away at the door.
     expect(session().proposals.get("prop_0001")!.status).toBe("expired");
+  });
+});
+
+/**
+ * FR-8.0 — cancellation.
+ *
+ * The three settlements a human causes are easy to remember; the fourth is the one that
+ * gets forgotten, because nobody clicks it. A proposal is a question about an incident,
+ * and when that incident ends or the world is thrown away, the question stops being
+ * answerable — but an agent is still blocked on the answer. These assert it always gets
+ * one.
+ */
+describe("cancellation — FR-8.0", () => {
+  beforeEach(() => {
+    resetSession();
+    intoIncident();
+  });
+
+  it("settles a blocked call when the incident it was about is resolved", async () => {
+    const id = proposalId(await propose());
+    const { proposals } = session();
+
+    let settled = false;
+    const call = invokeTool("execute_remediation", { proposal_id: id }, AGENT).then((r) => {
+      settled = true;
+      return r;
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(settled).toBe(false);
+    expect(proposals.get(id)!.status).toBe("awaiting_approval");
+
+    cancelOpenProposals("the incident was resolved");
+
+    const result = await call;
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("the incident was resolved");
+    expect(proposals.get(id)!.status).toBe("cancelled");
+    expect(session().engine.actions).toHaveLength(0);
+  });
+
+  it("settles a blocked call when the environment is reset, rather than hanging forever", async () => {
+    const id = proposalId(await propose());
+
+    const call = invokeTool("execute_remediation", { proposal_id: id }, AGENT);
+    await new Promise((r) => setTimeout(r, 10));
+
+    /*
+     * `dispose` drops the settler and clears the expiry timer. Without cancellation
+     * first, this call would never settle again for the life of the page: the prompt is
+     * gone, no click can arrive, and the timer that would have expired it is cleared.
+     */
+    resetSession();
+
+    const result = await call;
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("reset");
+  });
+
+  it("leaves a decided proposal alone — cancellation is not a second settlement", async () => {
+    const id = proposalId(await propose());
+    const { proposals, engine } = session();
+
+    const call = invokeTool("execute_remediation", { proposal_id: id }, AGENT);
+    proposals.approve(id, engine.world.nowMs);
+    expect((await call).ok).toBe(true);
+
+    cancelOpenProposals("the incident was resolved");
+
+    // Still executed. A cancellation that rewrote this would be a lie about an action
+    // the environment has already had applied to it.
+    expect(proposals.get(id)!.status).toBe("executed");
+    expect(engine.actions).toHaveLength(1);
   });
 });

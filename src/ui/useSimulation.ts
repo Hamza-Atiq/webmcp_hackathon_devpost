@@ -4,7 +4,13 @@ import { TICK_MS, type SpeedMultiplier } from "../engine/constants";
 import type { AuditEntry } from "../mcp/audit";
 import type { Proposal } from "../mcp/proposals";
 import { ACTION_KINDS, type ActionKind, type RemediationParams } from "../engine";
-import { notifySession, onSessionChange, resetSession, session } from "../session";
+import {
+  cancelOpenProposals,
+  notifySession,
+  onSessionChange,
+  resetSession,
+  session,
+} from "../session";
 
 /**
  * The driver that turns real time into simulated time.
@@ -134,6 +140,8 @@ export function useSimulation(): Simulation {
     const { engine } = session();
     if (!engine.scenarioPending) return;
     engine.startScenario("s1");
+    // FR-8.0 — the world an open proposal was reasoning about no longer exists.
+    cancelOpenProposals("the scenario was switched");
     record("start_scenario", "scenario: s1", "Scenario started immediately", true, "C");
     repaint();
   }, [record]);
@@ -202,6 +210,16 @@ export function useSimulation(): Simulation {
     (status: "investigating" | "identified" | "mitigating" | "resolved") => {
       const { engine } = session();
       const result = engine.setIncidentStatus(status, "human");
+
+      /*
+       * FR-8.0 — resolving cancels what is open. Ordered after the status change and
+       * before the record, so the trail reads the way it happened: the incident closed,
+       * and the proposals about it fell with it.
+       */
+      if (result.ok && status === "resolved") {
+        cancelOpenProposals("the incident was resolved");
+      }
+
       record(
         "update_incident_status",
         `status: ${status}`,
