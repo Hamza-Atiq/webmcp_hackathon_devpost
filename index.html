@@ -3,6 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!--
+      WebMCP origin trial token (expires 2026-11-17).
+
+      Without this, document.modelContext only exists for someone who has set
+      chrome://flags/#enable-webmcp-testing themselves, so a judge opening the live URL in
+      ordinary Chrome would see "WebMCP unavailable" and no tools at all. The token turns the
+      API on for every visitor to this origin, which is the whole point of shipping a public
+      link. Bound to https://webmcp-hackathon-devpost.vercel.app - renaming the deployment
+      invalidates it.
+    -->
+    <meta http-equiv="origin-trial" content="Avb5zLLVZOqRHimXxNMJAfFrCm2KtG7x4zp9o8tgQVbM+FwpLkaVqSOp2Z/7t64MdOqOU6hSEt57D4uFZ+WMuQ8AAABjeyJvcmlnaW4iOiJodHRwczovL3dlYm1jcC1oYWNrYXRob24tZGV2cG9zdC52ZXJjZWwuYXBwOjQ0MyIsImZlYXR1cmUiOiJXZWJNQ1AiLCJleHBpcnkiOjE3OTQ4NzM2MDB9" />
     <title>AgentOps Command Center</title>
     <meta
       name="description"
