@@ -189,20 +189,6 @@ in the in-app browser (`Ctrl+Shift+B`) and ask the agent to investigate the inci
 Tools are registered on the top-level page only — never in an iframe — because ChatGPT's browser
 does not discover tools inside iframes.
 
-## Specifications
-
-This project was built spec-first. The specs are the source of truth, not the chat log:
-
-| Document | Contents |
-|---|---|
-| [`specs/000-research.md`](specs/000-research.md) | WebMCP API research, verified at source |
-| [`specs/001-system-design.md`](specs/001-system-design.md) | Architecture and rationale |
-| [`specs/002-clarifications.md`](specs/002-clarifications.md) | Product decisions and their reasoning |
-| [`specs/003-tool-contracts.md`](specs/003-tool-contracts.md) | Tool surface, response envelope, bounding rules |
-| [`specs/005-approval-gate.md`](specs/005-approval-gate.md) | The human-approval mechanism in detail |
-| [`specs/spec.md`](specs/spec.md) | **Final behavioural specification** — every requirement and acceptance criterion |
-| [`specs/004-coverage.md`](specs/004-coverage.md) | Coverage matrix over every clause, re-checked each phase |
-
 ## License
 
 [MIT](LICENSE).
