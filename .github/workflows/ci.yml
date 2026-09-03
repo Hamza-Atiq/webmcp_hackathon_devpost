@@ -1,0 +1,42 @@
+# Typecheck, build and the full test suite on every push and pull request.
+#
+# Deliberately separate from deployment. Vercel builds from the same commit but runs only
+# `npm run build`, and that is on purpose: the engine tests simulate real time rather than
+# mocking it, so the suite takes about two minutes. Wiring it into the deploy would put a
+# slow, occasionally noisy gate in front of the live judge URL — a failure there would stop
+# the deployed site updating rather than merely reporting a problem. CI catches the same
+# regressions and can never block a deploy.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Typecheck, build and test
+    runs-on: ubuntu-latest
+    # The suite runs a simulated clock at real speed; 2 minutes is normal, 10 is a hang.
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the development machine. `npm ci` needs the lockfile, which is committed.
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm run build` is `tsc --noEmit && vite build`, so this covers the typecheck too.
+      # Both run because a project can typecheck and still fail to bundle.
+      - name: Typecheck and build
+        run: npm run build
+
+      - name: Test
+        run: npm test

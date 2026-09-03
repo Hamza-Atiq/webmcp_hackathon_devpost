@@ -1,15 +1,13 @@
 # AgentOps Command Center
 
+[![CI](https://github.com/Hamza-Atiq/webmcp_hackathon_devpost/actions/workflows/ci.yml/badge.svg)](https://github.com/Hamza-Atiq/webmcp_hackathon_devpost/actions/workflows/ci.yml)
+
 An AI-native incident response console where a human and an AI agent work the same live incident
 together, built for the **WebMCP Challenge**.
 
 The product exists to demonstrate one claim: *the valuable thing is not agent autonomy, it is a
 clear, enforced boundary between what an agent may **observe**, what it may **recommend**, and what
 it may **execute**.*
-
-> **Status: feature-complete and deployed.** Five scenarios, sixteen WebMCP tools and the approval
-> gate are live and verified in the browser; 156 tests pass. The demo video and the full write-up
-> are the remaining submission items.
 
 **Live URL:** <https://webmcp-hackathon-devpost.vercel.app>
 **Demo video:** _(added at submission)_
@@ -70,8 +68,7 @@ them, weakest to strongest:
 Open DevTools → **Application** → **WebMCP**. Lists every registered tool, shows invocation history
 and schema errors, and lets you run any tool by hand with your own input.
 
-**2. Chrome with the testing flag** — the path for a judge without ChatGPT Work.
-Enable `chrome://flags/#enable-webmcp-testing` (Chromium 146+), restart, and open the live URL.
+**2. Chrome with the testing flag** — Enable `chrome://flags/#enable-webmcp-testing` (Chromium 146+), restart, and open the live URL.
 
 **3. ChatGPT desktop, built-in browser** — the real end-to-end run.
 Requires ChatGPT Work or Codex on GPT-5.6 Sol or Terra, with site tools enabled. Open the live URL
