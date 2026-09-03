@@ -177,7 +177,7 @@ block. All sixteen tools are classified: twelve A, three B, and one C.
 
 | Clause | Status |
 |---|---|
-| 14.1 `document.modelContext.registerTool` | **done and seen** — 3 Sept 2026, Chrome 152 with `#enable-webmcp-testing`: the header reads WebMCP connected and DevTools → Application → WebMCP lists all fourteen tools |
+| 14.1 `document.modelContext.registerTool` | **done and seen** — 3 Sept 2026, Chrome 152 with `#enable-webmcp-testing`: the header reads WebMCP connected and DevTools → Application → WebMCP lists every registered tool. Re-verified on the deployed URL through `document.modelContext.getTools()`: **sixteen**, four of them annotated `readOnlyHint: false` |
 | 14.2 top-level only | done — no iframes |
 | 14.3 single page, no navigation | done — no router |
 | 14.4 registered exactly once | done — module-scope guard, outside React |

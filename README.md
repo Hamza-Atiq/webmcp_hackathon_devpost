@@ -7,8 +7,9 @@ The product exists to demonstrate one claim: *the valuable thing is not agent au
 clear, enforced boundary between what an agent may **observe**, what it may **recommend**, and what
 it may **execute**.*
 
-> **Status: in active development.** Deployment skeleton is live; the simulation engine, evidence
-> sources and WebMCP tool layer are landing phase by phase.
+> **Status: feature-complete and deployed.** Five scenarios, sixteen WebMCP tools and the approval
+> gate are live and verified in the browser; 156 tests pass. The demo video and the full write-up
+> are the remaining submission items.
 
 **Live URL:** <https://webmcp-hackathon-devpost.vercel.app>
 **Demo video:** _(added at submission)_
