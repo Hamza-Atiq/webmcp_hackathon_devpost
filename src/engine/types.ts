@@ -52,6 +52,17 @@ export interface ServiceConfig {
   capacityPerReplica: number;
   /** Heap bytes leaked per served request. Zero unless a leaking version is deployed. */
   leakBytesPerReq: number;
+  /** Share of requests that call an external provider. Zero if the service calls none. */
+  externalFraction: number;
+  /** How long one external call occupies a slot at the provider, in ms. */
+  externalHoldMs: number;
+  /** Concurrent calls the provider will accept from this service. */
+  externalConcurrency: number;
+  /**
+   * Extra time a database query waits on locks held by something else, in ms, before
+   * concurrency is accounted for. Zero unless a migration is in flight.
+   */
+  migrationLockMs: number;
   /** Heap ceiling in bytes; crossing it forces restarts and failures. */
   heapLimitBytes: number;
 }
@@ -67,6 +78,18 @@ export interface ServiceState {
   heapBytes: number;
   /** Requests waiting for a pooled connection right now. */
   waiters: number;
+  /** Requests waiting for a slot at the external provider right now. */
+  externalWaiters: number;
+  /**
+   * The feature flag gating this service's *optional* work, or null if it has none.
+   *
+   * One field rather than one per mechanism, because a service has one such path: for
+   * payment-service it is the fraud call, for user-service it is reading profiles through
+   * the migrating schema. Turning the flag off removes that work, which is what makes
+   * `disable_feature_flag` a real remediation rather than a button that flips a boolean
+   * nobody reads.
+   */
+  gateFlagKey: string | null;
   /** Connections currently checked out. */
   connectionsInUse: number;
   /** Fraction of this service's traffic diverted elsewhere by shift_traffic. */

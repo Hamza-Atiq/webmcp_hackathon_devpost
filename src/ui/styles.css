@@ -482,6 +482,38 @@ input {
   color: var(--ink-faint);
 }
 
+.action-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.action-param {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 11px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.action-param span {
+  font: 400 9px/1 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+
+.action-param select {
+  flex: 1;
+  min-width: 0;
+  font: 400 11px/1 var(--mono);
+  color: var(--ink);
+  background: var(--void);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 5px 7px;
+  cursor: pointer;
+}
+
 .scenario-pick {
   display: flex;
   align-items: center;

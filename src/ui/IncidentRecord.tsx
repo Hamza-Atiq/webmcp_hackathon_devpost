@@ -11,6 +11,7 @@ import {
 import { SERVICE_NAMES } from "../engine";
 import type { AuditEntry } from "./useSimulation";
 import type { Proposal } from "../mcp/proposals";
+import { useState } from "react";
 import { shortClock } from "./format";
 
 /**
@@ -58,6 +59,13 @@ export function IncidentRecord({
   onRemediate(kind: ActionKind, service: ServiceName, params?: RemediationParams): void;
   onStatus(status: ChosenStatus): void;
 }) {
+  /*
+   * Enabled flags on the selected service. A flag already switched off is not an action
+   * anyone can take, and offering it would be offering a no-op.
+   */
+  const flags = engine.world.flags.filter((f) => f.service === service && f.enabled);
+  const [chosen, setFlag] = useState<string>("");
+  const flag = flags.some((f) => f.key === chosen) ? chosen : (flags[0]?.key ?? "");
   const incident = engine.incident;
 
   return (
@@ -123,18 +131,48 @@ export function IncidentRecord({
         </p>
 
         {ACTION_KINDS.map((kind) => (
-          <button
-            key={kind}
-            type="button"
-            className="action"
-            onClick={() => onRemediate(kind, service, defaultParams(engine, kind, service))}
-          >
-            <span className="action-name">{ACTION_LABELS[kind]}</span>
-            <span className={`blast is-${BLAST_RADIUS[kind].toLowerCase()}`}>
-              {BLAST_RADIUS[kind]} blast radius
-            </span>
-            <span className="action-detail">{actionDetail(engine, kind, service)}</span>
-          </button>
+          <div key={kind} className="action-row">
+            <button
+              type="button"
+              className="action"
+              onClick={() =>
+                onRemediate(kind, service, {
+                  ...defaultParams(engine, kind, service),
+                  ...(kind === "disable_feature_flag" ? { flag } : {}),
+                })
+              }
+            >
+              <span className="action-name">{ACTION_LABELS[kind]}</span>
+              <span className={`blast is-${BLAST_RADIUS[kind].toLowerCase()}`}>
+                {BLAST_RADIUS[kind]} blast radius
+              </span>
+              <span className="action-detail">
+                {kind === "disable_feature_flag"
+                  ? (flags.find((f) => f.key === flag)?.description ?? "No flag is enabled here")
+                  : actionDetail(engine, kind, service)}
+              </span>
+            </button>
+
+            {/*
+              FR-12.1 — a human has every action the agent has, *with the same parameters*.
+              Without this the control could only ever disable whichever flag happened to
+              be listed first, so a person working scenario 3 or 4 by hand could not reach
+              the flag that is actually the fix. The agent chooses a flag by name; so does
+              a human, from the same list.
+            */}
+            {kind === "disable_feature_flag" && flags.length > 0 && (
+              <label className="action-param">
+                <span>Flag</span>
+                <select value={flag} onChange={(event) => setFlag(event.target.value)}>
+                  {flags.map((f) => (
+                    <option key={f.key} value={f.key}>
+                      {f.key}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
         ))}
 
         <p className="note">

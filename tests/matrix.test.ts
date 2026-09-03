@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { ACTION_KINDS, Engine, SCENARIO_IDS, type ActionKind, type ScenarioId } from "../src/engine";
 import { RECOVERY_ERROR_RATE, RECOVERY_P99_MS } from "../src/engine/constants";
 import { meanOver } from "../src/engine/store";
-import type { ServiceName } from "../src/engine";
+import type { ServiceName, Span } from "../src/engine";
 
 /**
  * FR-9.2 — the outcome matrix, measured rather than asserted.
@@ -28,12 +28,23 @@ interface Signals {
 const ERROR_BAND = 0.02;
 const P99_BAND = 150;
 
+/**
+ * `flag` names the flag the action is given, because an agent has to choose one and the
+ * choice is part of the remediation. `disable_feature_flag` with no argument would fall
+ * to whichever flag happens to be listed first, which tests the list order rather than
+ * the mechanism.
+ */
 const EXPECTED: Record<
   ScenarioId,
-  { service: ServiceName; outcomes: Partial<Record<ActionKind, Outcome>> }
+  {
+    service: ServiceName;
+    flag: string;
+    outcomes: Partial<Record<ActionKind, Outcome>>;
+  }
 > = {
   s1: {
     service: "checkout-service",
+    flag: "checkout_v2_pricing",
     outcomes: {
       rollback_deployment: "full",
       scale_replicas: "partial",
@@ -48,6 +59,7 @@ const EXPECTED: Record<
    */
   s2: {
     service: "inventory-service",
+    flag: "stock_reservation_v2",
     outcomes: {
       rollback_deployment: "full",
       scale_replicas: "partial",
@@ -55,8 +67,34 @@ const EXPECTED: Record<
       shift_traffic: "none",
     },
   },
+  s3: {
+    service: "payment-service",
+    flag: "payment_fraud_check_v2",
+    outcomes: {
+      disable_feature_flag: "full",
+      shift_traffic: "partial",
+      rollback_deployment: "none",
+      restart_service: "none",
+      scale_replicas: "none",
+    },
+  },
+  /*
+   * The only "worse" in the matrix, and the reason the classifier has that outcome at all.
+   */
+  s4: {
+    service: "user-service",
+    flag: "user_profile_schema_v2",
+    outcomes: {
+      disable_feature_flag: "full",
+      shift_traffic: "partial",
+      scale_replicas: "worse",
+      rollback_deployment: "none",
+      restart_service: "none",
+    },
+  },
   s5: {
     service: "checkout-service",
+    flag: "checkout_v2_pricing",
     outcomes: {
       scale_replicas: "full",
       shift_traffic: "partial",
@@ -120,7 +158,7 @@ function classify(
 
 describe("the outcome matrix falls out of the physics — FR-9.2", () => {
   for (const id of SCENARIO_IDS) {
-    const { service, outcomes } = EXPECTED[id];
+    const { service, flag, outcomes } = EXPECTED[id];
 
     for (const action of ACTION_KINDS) {
       const expected = outcomes[action];
@@ -137,7 +175,8 @@ describe("the outcome matrix falls out of the physics — FR-9.2", () => {
           control.advanceSeconds(WINDOW_SEC);
 
           const treated = degraded(seed, id);
-          expect(treated.remediate(action, service, {}, "agent").ok).toBe(true);
+          const params = action === "disable_feature_flag" ? { flag } : {};
+          expect(treated.remediate(action, service, params, "agent").ok).toBe(true);
           treated.advanceSeconds(WINDOW_SEC);
 
           const outcome = classify(
@@ -149,6 +188,34 @@ describe("the outcome matrix falls out of the physics — FR-9.2", () => {
       });
     }
   }
+});
+
+/**
+ * FR-2.4c — an agent with a favourite action cannot exceed a 40% success rate.
+ *
+ * Asserted over the expectations rather than over a run, because it is a claim about the
+ * shape of the scenario library and not about any one incident. It is what stops the five
+ * scenarios from collapsing into one exercise repeated five times: whatever an agent
+ * learned last incident, it is wrong at least three times in five.
+ */
+describe("no action is the answer more than twice — FR-2.4c", () => {
+  it("holds across the whole library", () => {
+    const fixes: Partial<Record<ActionKind, number>> = {};
+
+    for (const id of SCENARIO_IDS) {
+      for (const [action, outcome] of Object.entries(EXPECTED[id].outcomes)) {
+        if (outcome === "full") fixes[action as ActionKind] = (fixes[action as ActionKind] ?? 0) + 1;
+      }
+    }
+
+    // Every scenario has exactly one full fix, or the library has a hole in it.
+    const totalFixes = Object.values(fixes).reduce((sum, n) => sum + n, 0);
+    expect(totalFixes).toBe(SCENARIO_IDS.length);
+
+    for (const [action, count] of Object.entries(fixes)) {
+      expect(count, `${action} fixes ${count} scenarios`).toBeLessThanOrEqual(2);
+    }
+  });
 });
 
 /**
@@ -192,4 +259,55 @@ function signalsOf(engine: Engine, service: ServiceName, seconds: number): Signa
     errorRate: meanOver(engine.store, service, "errorRate", seconds) ?? 0,
     p99: meanOver(engine.store, service, "p99", seconds) ?? 0,
   };
+}
+
+/**
+ * FR-4.3, FR-4.8 — a trace has to blame the span that actually failed.
+ *
+ * Written after a live trace was found carrying an error on `db.acquire_connection` for a
+ * request that died at an external provider, with the database working perfectly. An
+ * agent reading that would blame the pool, and would be right to, because the evidence
+ * said so. Evidence that points at the wrong subsystem is worse than no evidence.
+ */
+describe("a failed span is the span that failed — FR-4.3", () => {
+  it("blames the provider in scenario 3 and the pool in scenario 1", () => {
+    const cases: Array<{ id: ScenarioId; service: ServiceName; span: string; innocent: string }> = [
+      {
+        id: "s3",
+        service: "payment-service",
+        span: "external.fraud_score",
+        innocent: "db.acquire_connection",
+      },
+      {
+        id: "s1",
+        service: "checkout-service",
+        span: "db.acquire_connection",
+        innocent: "app.handler",
+      },
+    ];
+
+    for (const { id, service, span, innocent } of cases) {
+      const engine = degraded(42, id);
+      const failures = engine.store.traces.filter(
+        (trace) => trace.service === service && trace.status === "error",
+      );
+      expect(failures.length, `${id} produced no failed traces`).toBeGreaterThan(0);
+
+      const blamed = failures.filter((trace) =>
+        flatten(trace.root).some((s) => s.name === span && s.error !== undefined),
+      );
+      expect(blamed.length, `${id}: no failed trace blames ${span}`).toBeGreaterThan(0);
+
+      for (const trace of blamed) {
+        const wrong = flatten(trace.root).find(
+          (s) => s.name === innocent && s.error !== undefined,
+        );
+        expect(wrong, `${id}: ${trace.id} blames ${innocent} as well`).toBeUndefined();
+      }
+    }
+  });
+});
+
+function flatten(span: Span): Span[] {
+  return [span, ...span.children.flatMap(flatten)];
 }

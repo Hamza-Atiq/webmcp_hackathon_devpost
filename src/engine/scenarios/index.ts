@@ -1,6 +1,8 @@
 import type { World } from "../world";
 import { onset as s1 } from "./s1";
 import { onset as s2 } from "./s2";
+import { onset as s3 } from "./s3";
+import { onset as s4 } from "./s4";
 import { onset as s5 } from "./s5";
 
 /**
@@ -23,17 +25,19 @@ import { onset as s5 } from "./s5";
  * so an unimplemented id is a compile error rather than a scenario that quietly runs
  * somebody else's onset.
  */
-export type ScenarioId = "s1" | "s2" | "s5";
+export type ScenarioId = "s1" | "s2" | "s3" | "s4" | "s5";
 
-export const SCENARIO_IDS: readonly ScenarioId[] = ["s1", "s2", "s5"];
+export const SCENARIO_IDS: readonly ScenarioId[] = ["s1", "s2", "s3", "s4", "s5"];
 
 export const SCENARIO_LABELS: Record<ScenarioId, string> = {
   s1: "Scenario 1",
   s2: "Scenario 2",
+  s3: "Scenario 3",
+  s4: "Scenario 4",
   s5: "Scenario 5",
 };
 
-const ONSETS: Record<ScenarioId, (world: World) => void> = { s1, s2, s5 };
+const ONSETS: Record<ScenarioId, (world: World) => void> = { s1, s2, s3, s4, s5 };
 
 export function startScenario(world: World, id: ScenarioId): void {
   ONSETS[id](world);

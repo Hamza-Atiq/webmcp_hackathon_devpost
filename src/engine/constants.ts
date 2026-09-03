@@ -87,6 +87,16 @@ export const GATEWAY_TIMEOUT_MS = 3000;
  * scenario 1 it changes nothing, because that incident is a queue on a shared pool and
  * not a shortage of CPU.
  */
+/**
+ * The budget a service gives a call to somebody else's service before abandoning it.
+ *
+ * Much shorter than the gateway's three seconds, and deliberately so: it is what stops a
+ * degraded provider from consuming the whole request budget of everything upstream. It is
+ * also what makes scenario 3 a SEV-2 rather than an outage — the calls that fail, fail
+ * quickly, and the service goes on serving everything that does not need scoring.
+ */
+export const EXTERNAL_TIMEOUT_MS = 1200;
+
 export const FORWARD_COST = 0.35;
 
 /**

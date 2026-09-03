@@ -31,6 +31,16 @@ export interface PoolInput {
   /** Requests already waiting, carried from the previous tick. */
   waiters: number;
   tickSec: number;
+  /**
+   * How long a caller waits before abandoning, in ms.
+   *
+   * Defaults to the gateway's timeout, which is right for a request queueing on this
+   * service's own database: nobody is left to give up sooner. A call to somebody else's
+   * service is different — the caller sets a budget and abandons on its own terms, which
+   * is both what a well-built client does and the reason a slow dependency degrades a
+   * service instead of stopping it.
+   */
+  timeoutMs?: number;
 }
 
 export interface PoolResult {
@@ -47,7 +57,7 @@ export interface PoolResult {
 }
 
 export function stepPool(input: PoolInput): PoolResult {
-  const { dbRps, poolMax, holdMs, waiters, tickSec } = input;
+  const { dbRps, poolMax, holdMs, waiters, tickSec, timeoutMs = GATEWAY_TIMEOUT_MS } = input;
 
   const holdSec = holdMs / 1000;
 
@@ -65,14 +75,14 @@ export function stepPool(input: PoolInput): PoolResult {
   // that implies a full timeout of wait, every further arrival is abandoned as a 504.
   // This is what pins a saturated pool at a steady error rate instead of letting the
   // queue grow to infinity.
-  const maxQueue = serviceRatePerSec * (GATEWAY_TIMEOUT_MS / 1000);
+  const maxQueue = serviceRatePerSec * (timeoutMs / 1000);
   let timedOut = 0;
   if (queue > maxQueue) {
     timedOut = queue - maxQueue;
     queue = maxQueue;
   }
 
-  const waitMs = serviceRatePerSec > 0 ? (queue / serviceRatePerSec) * 1000 : GATEWAY_TIMEOUT_MS;
+  const waitMs = serviceRatePerSec > 0 ? (queue / serviceRatePerSec) * 1000 : timeoutMs;
 
   // Concurrent demand by Little's law, capped by what the pool can actually hold.
   const demand = dbRps * holdSec;

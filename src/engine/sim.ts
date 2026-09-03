@@ -1,5 +1,7 @@
 import {
   CONTENTION_CPU_GAIN,
+  DEFAULT_REPLICAS,
+  EXTERNAL_TIMEOUT_MS,
   FORWARD_COST,
   GC_ERROR_GAIN,
   GC_ERROR_MAX,
@@ -19,11 +21,15 @@ import {
   TICK_SEC,
   TRACE_SAMPLE_RATE,
 } from "./constants";
+import { isFlagEnabled } from "./flags";
 import { evaluateIncident } from "./incident";
 import { stepPool } from "./mechanisms/pool";
-import { applyTransitions, nextId, SERVICE_NAMES, type World } from "./world";
+import { applyTransitions, baseRpsFor, nextId, SERVICE_NAMES, type World } from "./world";
 import { pushLog, pushMetric, pushTrace, type Store } from "./store";
 import type { MetricPoint, ServiceName, Span } from "./types";
+
+/** Which span a failed request died in, so the trace blames the right one. */
+type FailureSource = "pool" | "provider" | "app";
 
 /**
  * One tick of the world.
@@ -57,6 +63,7 @@ export interface Sim {
   remainder: Record<ServiceName, number>;
   /** Suppresses repeat log lines so a saturated pool does not emit 4 lines a second. */
   lastPoolLogSec: Record<ServiceName, number>;
+  lastLockLogSec: Record<ServiceName, number>;
   /** Correlated error logs already emitted this simulated second, per service. */
   correlatedThisSec: Record<ServiceName, number>;
   /** Error traces already captured this simulated second, per service. */
@@ -85,16 +92,27 @@ export function createSim(world: World, store: Store): Sim {
   const acc = {} as Record<ServiceName, Accumulator>;
   const remainder = {} as Record<ServiceName, number>;
   const lastPoolLogSec = {} as Record<ServiceName, number>;
+  const lastLockLogSec = {} as Record<ServiceName, number>;
   const correlatedThisSec = {} as Record<ServiceName, number>;
   const errorTracesThisSec = {} as Record<ServiceName, number>;
   for (const name of SERVICE_NAMES) {
     acc[name] = newAccumulator(0);
     remainder[name] = 0;
     lastPoolLogSec[name] = -1;
+    lastLockLogSec[name] = -1;
     correlatedThisSec[name] = 0;
     errorTracesThisSec[name] = 0;
   }
-  return { world, store, acc, remainder, lastPoolLogSec, correlatedThisSec, errorTracesThisSec };
+  return {
+    world,
+    store,
+    acc,
+    remainder,
+    lastPoolLogSec,
+    lastLockLogSec,
+    correlatedThisSec,
+    errorTracesThisSec,
+  };
 }
 
 function percentile(sorted: number[], p: number): number {
@@ -167,6 +185,29 @@ export function tick(sim: Sim): void {
     const restartErrorRate =
       world.nowMs < service.restartingUntilMs && cfg.replicas > 0 ? 1 / cfg.replicas : 0;
 
+    /*
+     * Lock contention — scenario 4's mechanism.
+     *
+     * A migration job is holding locks on tables the application reads through, so every
+     * query waits for them. What it waits is not fixed: locks are contended, and
+     * contention rises with the number of transactions competing for them. More replicas
+     * open more connections and run more concurrent transactions, so **adding capacity
+     * makes this incident worse** (FR-9.4) — the one cell in the matrix where a
+     * reasonable-sounding action is actively harmful. Moving traffic away runs fewer
+     * transactions here and relieves it, without making the migration any less in flight.
+     *
+     * Gated on the same flag as the provider call, because it is the same kind of thing:
+     * optional work this service does, which it can be told to stop doing. Reading
+     * profiles through the pre-migration schema is not blocked by the migration at all.
+     */
+    const gateOpen = service.gateFlagKey === null || isFlagEnabled(world, service.gateFlagKey);
+    const localDbRps = rps * cfg.dbFraction;
+    const baselineDbRps = baseRpsFor(name) * cfg.dbFraction;
+    const lockContention =
+      baselineDbRps > 0 ? (localDbRps / baselineDbRps) * (cfg.replicas / DEFAULT_REPLICAS) : 0;
+    const lockWaitMs = gateOpen ? cfg.migrationLockMs * lockContention : 0;
+    const effectiveHoldMs = cfg.dbHoldMs + lockWaitMs;
+
     // --- connection pool ----------------------------------------------------
     // The pool is shared across every instance serving this service, so it sees the whole
     // offered load regardless of which instance answered — see the note above.
@@ -178,7 +219,7 @@ export function tick(sim: Sim): void {
       const pool = stepPool({
         dbRps,
         poolMax: cfg.dbPoolMax,
-        holdMs: cfg.dbHoldMs,
+        holdMs: effectiveHoldMs,
         waiters: service.waiters,
         tickSec: TICK_SEC,
       });
@@ -191,6 +232,43 @@ export function tick(sim: Sim): void {
 
       const dbArrivals = dbRps * TICK_SEC;
       timeoutShare = dbArrivals > 0 ? Math.min(1, pool.timedOut / dbArrivals) : 0;
+    }
+
+    /*
+     * The external provider — scenario 3's mechanism.
+     *
+     * A provider is a queue like any other, so it is the same queue: a fixed number of
+     * concurrent slots, a hold time, and requests that give up at the gateway timeout.
+     * What differs is whose demand it sees. The connection pool is shared with every
+     * instance of this service, so moving traffic away changes nothing there; a provider
+     * is called per region, and traffic served elsewhere is scored by that region's
+     * endpoint. So this one takes **locally served** load, and that single difference is
+     * why `shift_traffic` relieves scenario 3 and does nothing for scenario 1.
+     *
+     * Gated on the flag, so turning the flag off removes the call — and with it the
+     * queue, the latency and the timeouts — which is what makes `disable_feature_flag` a
+     * remediation rather than a boolean nobody reads.
+     */
+    const callsProvider = cfg.externalFraction > 0 && cfg.externalConcurrency > 0 && gateOpen;
+    let providerWaitMs = 0;
+    let providerTimeoutShare = 0;
+
+    if (callsProvider) {
+      const callRps = rps * cfg.externalFraction;
+      const provider = stepPool({
+        dbRps: callRps,
+        poolMax: cfg.externalConcurrency,
+        holdMs: cfg.externalHoldMs,
+        waiters: service.externalWaiters,
+        tickSec: TICK_SEC,
+        timeoutMs: EXTERNAL_TIMEOUT_MS,
+      });
+      service.externalWaiters = provider.waiters;
+      providerWaitMs = provider.waitMs;
+      const arrivals = callRps * TICK_SEC;
+      providerTimeoutShare = arrivals > 0 ? Math.min(1, provider.timedOut / arrivals) : 0;
+    } else {
+      service.externalWaiters = 0;
     }
 
     /*
@@ -250,16 +328,43 @@ export function tick(sim: Sim): void {
       let queryMs = 0;
       let failed = false;
       let failure = "";
+      /*
+       * Where the request died, so the trace can say so on the right span.
+       *
+       * Without this the error string was stamped on every span that existed, and a
+       * request that failed at the provider carried an error on `db.acquire_connection`
+       * as well — evidence pointing at a database that was working perfectly. An agent
+       * reading that trace would blame the pool, and it would be the trace's fault.
+       */
+      let failedAt: FailureSource = "app";
 
       if (touchesDb) {
         acquireMs = waitMs;
-        queryMs = world.rng.lognormal(cfg.dbHoldMs, 0.2);
+        queryMs = world.rng.lognormal(effectiveHoldMs, 0.2);
         latency += acquireMs + queryMs;
 
         if (timeoutShare > 0 && world.rng.chance(timeoutShare)) {
           failed = true;
+          failedAt = "pool";
           failure = "gateway timeout waiting for a database connection";
           latency = GATEWAY_TIMEOUT_MS;
+        }
+      }
+
+      /*
+       * Drawn only when the service actually has a provider, so a service without one
+       * takes no sample and the seeded stream is unchanged for it (FR-1.5).
+       */
+      let providerMs = 0;
+      if (callsProvider && world.rng.chance(cfg.externalFraction)) {
+        providerMs = providerWaitMs + world.rng.lognormal(cfg.externalHoldMs, 0.25);
+        latency += providerMs;
+
+        if (!failed && providerTimeoutShare > 0 && world.rng.chance(providerTimeoutShare)) {
+          failed = true;
+          failedAt = "provider";
+          failure = "fraud scoring provider did not respond within the request budget";
+          latency = EXTERNAL_TIMEOUT_MS;
         }
       }
 
@@ -312,7 +417,17 @@ export function tick(sim: Sim): void {
 
       if (capture) {
         if (failed) sim.errorTracesThisSec[name] += 1;
-        const traceId = recordTrace(sim, name, latency, acquireMs, queryMs, failed, failure);
+        const traceId = recordTrace(
+          sim,
+          name,
+          latency,
+          acquireMs,
+          queryMs,
+          providerMs,
+          failed,
+          failure,
+          failedAt,
+        );
 
         // A notable failure also says so in the log, carrying the trace id. This is the link
         // that lets an agent move from "the logs mention timeouts" to "here is the request
@@ -334,6 +449,24 @@ export function tick(sim: Sim): void {
 
     acc.cpu = Math.min(1, util + pressure * CONTENTION_CPU_GAIN);
     acc.memory = heapFraction;
+
+    /*
+     * A lock wait long enough to matter says so, once a second, the way a database's slow
+     * query log does. It names the migration because a real one would: this is evidence
+     * about a mechanism, not a label describing the scenario (FR-2.5).
+     */
+    if (lockWaitMs > 50 && sim.lastLockLogSec[name] !== secondNow) {
+      sim.lastLockLogSec[name] = secondNow;
+      pushLog(store, {
+        id: nextId(world, "log"),
+        t: world.nowMs,
+        service: name,
+        level: "warn",
+        message:
+          `query blocked ${Math.round(lockWaitMs)}ms waiting for a lock held by another ` +
+          `session; ${cfg.replicas} replicas holding connections`,
+      });
+    }
 
     // --- log lines describing real pool state -------------------------------
     if (acc.poolSaturated && sim.lastPoolLogSec[name] !== secondNow) {
@@ -360,14 +493,16 @@ function recordTrace(
   totalMs: number,
   acquireMs: number,
   queryMs: number,
+  providerMs: number,
   failed: boolean,
   failure: string,
+  failedAt: FailureSource,
 ): string {
   const { world, store } = sim;
   const children: Span[] = [];
   let cursor = 0;
 
-  const appMs = Math.max(0, totalMs - acquireMs - queryMs);
+  const appMs = Math.max(0, totalMs - acquireMs - queryMs - providerMs);
 
   if (acquireMs > 0 || queryMs > 0) {
     children.push({
@@ -375,7 +510,7 @@ function recordTrace(
       service,
       startMs: cursor,
       durationMs: acquireMs,
-      ...(failed ? { error: failure } : {}),
+      ...(failed && failedAt === "pool" ? { error: failure } : {}),
       children: [],
     });
     cursor += acquireMs;
@@ -389,11 +524,24 @@ function recordTrace(
     cursor += queryMs;
   }
 
+  if (providerMs > 0) {
+    children.push({
+      name: "external.fraud_score",
+      service,
+      startMs: cursor,
+      durationMs: providerMs,
+      ...(failed && failedAt === "provider" ? { error: failure } : {}),
+      children: [],
+    });
+    cursor += providerMs;
+  }
+
   children.push({
     name: "app.handler",
     service,
     startMs: cursor,
     durationMs: appMs,
+    ...(failed && failedAt === "app" ? { error: failure } : {}),
     children: [],
   });
 

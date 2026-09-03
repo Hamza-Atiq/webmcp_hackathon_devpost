@@ -37,6 +37,21 @@ interface ServiceDef {
 const HEAP_LIMIT = 512 * 1024 * 1024;
 
 /**
+ * The flag gating each service's optional work — see `ServiceState.gateFlagKey`.
+ *
+ * Named here rather than in `flags.ts` because it is a property of the service's
+ * architecture, not of the flag list: payment-service's fraud call and user-service's
+ * v2 schema read are code paths that exist whether or not anything is wrong with them.
+ */
+const GATE_FLAGS: Record<ServiceName, string | null> = {
+  "api-gateway": null,
+  "checkout-service": null,
+  "payment-service": "payment_fraud_check_v2",
+  "inventory-service": null,
+  "user-service": "user_profile_schema_v2",
+};
+
+/**
  * Heap a service holds when it is doing nothing wrong.
  *
  * A process at rest is not empty: it carries buffers, caches and connection state
@@ -75,6 +90,10 @@ const SERVICE_DEFS: Record<ServiceName, ServiceDef> = {
       capacityPerReplica: 400,
       leakBytesPerReq: 0,
       heapLimitBytes: HEAP_LIMIT,
+      externalFraction: 0,
+      externalHoldMs: 0,
+      externalConcurrency: 0,
+      migrationLockMs: 0,
     },
   },
   "checkout-service": {
@@ -90,8 +109,19 @@ const SERVICE_DEFS: Record<ServiceName, ServiceDef> = {
       capacityPerReplica: 250,
       leakBytesPerReq: 0,
       heapLimitBytes: HEAP_LIMIT,
+      externalFraction: 0,
+      externalHoldMs: 0,
+      externalConcurrency: 0,
+      migrationLockMs: 0,
     },
   },
+  /**
+   * payment-service calls an external fraud-scoring provider on most authorisations, in
+   * **every** scenario and at a healthy latency. It has to exist in the baseline: a
+   * dependency that appeared only in the scenario that breaks it would identify that
+   * scenario the moment an agent looked at a trace (FR-2.5), the same argument that put a
+   * prior deployment on every service and a flag on every service.
+   */
   "payment-service": {
     baseRps: 320,
     dependencies: [],
@@ -105,6 +135,10 @@ const SERVICE_DEFS: Record<ServiceName, ServiceDef> = {
       capacityPerReplica: 220,
       leakBytesPerReq: 0,
       heapLimitBytes: HEAP_LIMIT,
+      externalFraction: 0.8,
+      externalHoldMs: 45,
+      externalConcurrency: 60,
+      migrationLockMs: 0,
     },
   },
   "inventory-service": {
@@ -120,6 +154,10 @@ const SERVICE_DEFS: Record<ServiceName, ServiceDef> = {
       capacityPerReplica: 220,
       leakBytesPerReq: 0,
       heapLimitBytes: HEAP_LIMIT,
+      externalFraction: 0,
+      externalHoldMs: 0,
+      externalConcurrency: 0,
+      migrationLockMs: 0,
     },
   },
   "user-service": {
@@ -135,6 +173,10 @@ const SERVICE_DEFS: Record<ServiceName, ServiceDef> = {
       capacityPerReplica: 200,
       leakBytesPerReq: 0,
       heapLimitBytes: HEAP_LIMIT,
+      externalFraction: 0,
+      externalHoldMs: 0,
+      externalConcurrency: 0,
+      migrationLockMs: 0,
     },
   },
 };
@@ -193,6 +235,8 @@ export function createWorld(seed: number): World {
       inboundRps: def.baseRps,
       heapBytes: restingHeapBytes(def.baseRps),
       waiters: 0,
+      externalWaiters: 0,
+      gateFlagKey: GATE_FLAGS[name],
       connectionsInUse: 0,
       trafficShiftedAway: 0,
       startedAtMs: 0,

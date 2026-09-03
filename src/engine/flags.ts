@@ -34,6 +34,11 @@ const FLAGS: Array<{ key: string; service: ServiceName; description: string }> =
     description: "Retry failed authorisations up to three times before giving up.",
   },
   {
+    key: "payment_fraud_check_v2",
+    service: "payment-service",
+    description: "Score every authorisation with the external fraud provider before approving it.",
+  },
+  {
     key: "stock_reservation_v2",
     service: "inventory-service",
     description: "Reserve stock at basket time rather than at checkout.",
@@ -53,4 +58,9 @@ export function seedFeatureFlags(world: World): void {
 
 export function flagByKey(world: World, key: string): FeatureFlag | undefined {
   return world.flags.find((f) => f.key === key);
+}
+
+/** Is this flag on? Unknown keys read as off, so a gate with no flag behind it is closed. */
+export function isFlagEnabled(world: World, key: string): boolean {
+  return flagByKey(world, key)?.enabled === true;
 }
