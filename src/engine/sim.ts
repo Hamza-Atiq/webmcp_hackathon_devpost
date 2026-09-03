@@ -1,4 +1,10 @@
 import {
+  CONTENTION_CPU_GAIN,
+  CONTENTION_ERROR_GAIN,
+  CONTENTION_ERROR_MAX,
+  CONTENTION_LATENCY_GAIN,
+  CONTENTION_ONSET,
+  WORKERS_PER_REPLICA,
   BASELINE_VARIATION,
   CORRELATED_LOGS_PER_SECOND,
   ERROR_TRACES_PER_SECOND,
@@ -173,13 +179,35 @@ export function tick(sim: Sim): void {
       timeoutShare = dbArrivals > 0 ? Math.min(1, pool.timedOut / dbArrivals) : 0;
     }
 
+    /*
+     * Worker-thread contention — FR-9.2a.
+     *
+     * Every request parked on the pool is holding a worker on the replica that accepted
+     * it. Divided between the replicas, that queue is what leaves a service with no
+     * headroom for the requests that never touch the database, and it is the only
+     * channel through which `scale_replicas` can help here: more replicas divide the
+     * same queue, while the queue itself belongs to the shared pool and neither shrinks
+     * when traffic is moved elsewhere nor grows when it is not.
+     *
+     * Derived from `service.waiters`, which the pool step above has just updated, and
+     * therefore zero for a healthy service and for every service with no pool at all.
+     * The healthy baseline is untouched by this.
+     */
+    const blockedPerReplica = cfg.replicas > 0 ? service.waiters / cfg.replicas : 0;
+    const pressure = blockedPerReplica / WORKERS_PER_REPLICA;
+    const contentionFactor = 1 + pressure * CONTENTION_LATENCY_GAIN;
+    const contentionErrorRate =
+      pressure > CONTENTION_ONSET
+        ? Math.min(CONTENTION_ERROR_MAX, (pressure - CONTENTION_ONSET) * CONTENTION_ERROR_GAIN)
+        : 0;
+
     // --- per-request outcomes ----------------------------------------------
     // Every metric, log and trace below is computed from these samples. Nothing is
     // read from a fixture or keyed on which scenario is active (FR-1.3, FR-1.4).
     for (let i = 0; i < count; i++) {
       const touchesDb = cfg.dbFraction > 0 && world.rng.chance(cfg.dbFraction);
 
-      let latency = world.rng.lognormal(cfg.baseMs, cfg.sigma) * satFactor;
+      let latency = world.rng.lognormal(cfg.baseMs, cfg.sigma) * satFactor * contentionFactor;
       let acquireMs = 0;
       let queryMs = 0;
       let failed = false;
@@ -200,6 +228,17 @@ export function tick(sim: Sim): void {
       if (!failed && satErrorRate > 0 && world.rng.chance(satErrorRate)) {
         failed = true;
         failure = "service overloaded";
+      }
+
+      /*
+       * Refused for want of a worker, not for want of a connection. A distinct failure
+       * string because it is distinct evidence: it is the line that tells an agent the
+       * service is shedding load it could otherwise serve, which is the part adding
+       * replicas can address.
+       */
+      if (!failed && contentionErrorRate > 0 && world.rng.chance(contentionErrorRate)) {
+        failed = true;
+        failure = "worker pool exhausted: no thread available to accept the request";
       }
 
       if (!failed && restartErrorRate > 0 && world.rng.chance(restartErrorRate)) {
@@ -250,7 +289,7 @@ export function tick(sim: Sim): void {
       }
     }
 
-    acc.cpu = Math.min(1, util);
+    acc.cpu = Math.min(1, util + pressure * CONTENTION_CPU_GAIN);
     acc.memory =
       cfg.heapLimitBytes > 0 ? Math.min(1, service.heapBytes / cfg.heapLimitBytes) : 0;
 

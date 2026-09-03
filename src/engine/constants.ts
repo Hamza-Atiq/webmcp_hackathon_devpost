@@ -54,6 +54,34 @@ export const RECOVERY_SUSTAIN_SEC = 30;
 export const GATEWAY_TIMEOUT_MS = 3000;
 
 /**
+ * Worker-thread contention — the mechanism that makes FR-9.2a's "spreads CPU load" true.
+ *
+ * A request waiting on a connection is not free while it waits: it occupies a worker on
+ * whichever replica accepted it. With the pool's queue divided between the replicas, a
+ * service holding hundreds of blocked requests has little headroom left for the requests
+ * that never touch the database at all, and starts refusing work it could otherwise serve.
+ *
+ * This is what separates the two irrelevant-looking actions in scenario 1's row of the
+ * FR-9.2 matrix, and the separation is the whole reason the row is interesting:
+ *
+ * - `scale_replicas` divides the same queue between more workers, so pressure falls and
+ *   the contention errors go with it. The pool is untouched, so the timeouts remain —
+ *   **partial relief**, never a fix, at any replica count up to MAX_REPLICAS.
+ * - `shift_traffic` moves requests to another instance serving the same database, so the
+ *   pool sees the same demand and queues the same requests. Pressure is unchanged —
+ *   **no effect**, which is what the matrix says and what the tests hold it to.
+ *
+ * Blocked requests per replica, over this, is the pressure. Below the onset a service
+ * absorbs the contention; above it, it starts shedding.
+ */
+export const WORKERS_PER_REPLICA = 120;
+export const CONTENTION_ONSET = 0.4;
+export const CONTENTION_ERROR_GAIN = 0.15;
+export const CONTENTION_ERROR_MAX = 0.08;
+export const CONTENTION_LATENCY_GAIN = 1.6;
+export const CONTENTION_CPU_GAIN = 0.85;
+
+/**
  * How long a configuration change takes to roll out across replicas, in simulated ms.
  * This is why no action produces instant recovery (FR-9.1): a rollback is a rolling
  * restart, so capacity returns progressively and the queue drains over time rather

@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { Engine, SERVICE_NAMES, ACTION_KINDS, MAX_REPLICAS, restingHeapFor } from "../src/engine";
-import { RECOVERY_ERROR_RATE, RECOVERY_P99_MS, TRAFFIC_SHIFT_MAX } from "../src/engine/constants";
+import {
+  RECOVERY_ERROR_RATE,
+  RECOVERY_P99_MS,
+  SEV2_ERROR_RATE,
+  TRAFFIC_SHIFT_MAX,
+} from "../src/engine/constants";
 import { meanOver } from "../src/engine/store";
 
 /**
@@ -88,6 +93,49 @@ describe("only the action that addresses the mechanism fixes it — FR-9.2", () 
     // The service does serve less traffic — the shift is real, it just does not help here.
     const served = meanOver(engine.store, "checkout-service", "requests", 30) ?? 0;
     expect(served).toBeLessThan(200);
+  });
+
+  it("gives scale_replicas real relief without ever fixing it — FR-9.2, FR-9.2a", () => {
+    /*
+     * The interesting row of the matrix. Two actions look equally irrelevant to a
+     * connection-pool regression, and the environment has to tell them apart on the
+     * measurements alone: adding replicas divides the pool's queue between more workers,
+     * while moving traffic to another instance leaves the same pool queueing the same
+     * requests. One gives relief, the other gives nothing, and neither is a fix.
+     *
+     * Two seeds, on 30-second means. A single second of a 450 rps environment is small
+     * enough to invent this effect where there is none, and it did once.
+     */
+    for (const seed of [42, 7]) {
+      const control = degraded(seed);
+      control.advanceSeconds(180);
+      const before = signals(control);
+
+      const scaled = degraded(seed);
+      expect(scaled.remediate("scale_replicas", "checkout-service", {}, "agent").ok).toBe(true);
+      scaled.advanceSeconds(180);
+
+      // Relief, and far outside the noise: the contention errors go, the timeouts stay.
+      expect(before.errorRate - signals(scaled).errorRate, `seed ${seed}`).toBeGreaterThan(0.02);
+      expect(recovered(scaled), `seed ${seed}`).toBe(false);
+    }
+  });
+
+  it("cannot be scaled into a fix at any replica count — FR-9.2a", () => {
+    /*
+     * The pool is shared at the service level, so replicas add workers and no
+     * connections. If this ever passes, `scale_replicas` has become a second full fix
+     * and FR-2.4c's "no action fixes more than two scenarios" is no longer protected by
+     * the simulation.
+     */
+    const engine = degraded();
+    expect(
+      engine.remediate("scale_replicas", "checkout-service", { replicas: MAX_REPLICAS }, "agent").ok,
+    ).toBe(true);
+    engine.advanceSeconds(180);
+
+    expect(recovered(engine)).toBe(false);
+    expect(signals(engine).errorRate).toBeGreaterThan(SEV2_ERROR_RATE);
   });
 
   it("produces no instant recovery, even from the correct fix — FR-9.1", () => {
