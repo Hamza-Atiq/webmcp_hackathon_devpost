@@ -89,6 +89,24 @@ export const GATEWAY_TIMEOUT_MS = 3000;
  */
 export const FORWARD_COST = 0.35;
 
+/**
+ * Garbage-collection pressure — the mechanism behind scenario 2.
+ *
+ * A heap that is filling does not fail at 100% and behave perfectly at 99%. The collector
+ * runs more often and holds the process longer as headroom disappears, so latency climbs
+ * first and requests start being refused only near the ceiling. That ordering is what
+ * makes the scenario diagnosable: memory is the signal that moved first, and an agent
+ * that reads only error rate will be looking at the last symptom rather than the first.
+ *
+ * Onset well below the ceiling, because a service spending its time collecting is already
+ * degraded even though nothing has failed yet.
+ */
+export const GC_ONSET = 0.7;
+export const GC_LATENCY_GAIN = 0.55;
+export const GC_ERROR_ONSET = 0.9;
+export const GC_ERROR_GAIN = 1.6;
+export const GC_ERROR_MAX = 0.35;
+
 export const WORKERS_PER_REPLICA = 120;
 export const CONTENTION_ONSET = 0.4;
 export const CONTENTION_ERROR_GAIN = 0.15;

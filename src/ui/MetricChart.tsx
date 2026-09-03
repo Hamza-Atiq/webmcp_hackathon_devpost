@@ -27,7 +27,7 @@ export function MetricChart({
   floor = 0,
 }: {
   points: MetricPoint[];
-  field: "errorRate" | "p99" | "p50" | "requests";
+  field: "errorRate" | "p99" | "p50" | "p95" | "requests" | "cpu" | "memory";
   title: string;
   format: (v: number) => string;
   thresholds?: ChartThreshold[];

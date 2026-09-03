@@ -3,7 +3,7 @@ import { RESTART_MS, ROLLOUT_MS, TRAFFIC_SHIFT_MAX } from "./constants";
 import { flagByKey } from "./flags";
 import { addTimelineEntry } from "./incident";
 import type { Store } from "./store";
-import type { ServiceName, TimelineEntry } from "./types";
+import type { ServiceConfig, ServiceName, TimelineEntry } from "./types";
 import { restingHeapFor, scheduleConfigChange, type World } from "./world";
 
 /**
@@ -86,12 +86,29 @@ export function applyRemediation(
   }
 }
 
+/**
+ * Which configuration field a deployment's diff key writes.
+ *
+ * A rollback restores every key it recognises, so a scenario that ships its regression
+ * as a diff entry is rolled back by the same code that rolls back any other — there is
+ * no branch anywhere asking which scenario is running. A key with no entry here is
+ * cosmetic (`LOG_LEVEL`) and restoring it changes nothing.
+ */
+const ROLLBACK_FIELDS: Record<string, keyof ServiceConfig | undefined> = {
+  DB_POOL_MAX: "dbPoolMax",
+  DB_HOLD_MS: "dbHoldMs",
+  LEAK_BYTES_PER_REQ: "leakBytesPerReq",
+  BASE_MS: "baseMs",
+  CAPACITY_PER_REPLICA: "capacityPerReplica",
+};
+
 function rollbackDeployment(
   world: World,
   store: Store,
   service: ServiceName,
   actor: TimelineEntry["actor"],
 ): RemediationOutcome {
+  const state = world.services[service];
   const latest = world.deployments
     .filter((d) => d.service === service && !d.rolledBack)
     .sort((a, b) => b.t - a.t)[0];
@@ -120,11 +137,26 @@ function rollbackDeployment(
   });
 
   for (const change of latest.diff) {
-    if (change.key === "DB_POOL_MAX") {
-      scheduleConfigChange(world, service, "dbPoolMax", Number(change.from));
-    }
+    const field = ROLLBACK_FIELDS[change.key];
+    if (field) scheduleConfigChange(world, service, field, Number(change.from));
   }
   latest.rolledBack = true;
+
+  /*
+   * A rollback is a redeploy, and a redeploy replaces every process — so whatever the
+   * running build had accumulated on the heap goes with it. This is not a courtesy to
+   * scenario 2; it is why rolling back a leaking version is a *fix* and restarting the
+   * leaking version is only relief (FR-9.3). Without it a rollback would stop the leak
+   * and leave the service sitting at the ceiling it had already reached.
+   *
+   * It does not set `restartingUntilMs`, and the difference from `restart_service` is
+   * the point rather than an oversight: a rollback is performed by the deployment system,
+   * which drains connections and waits for readiness, while `restart_service` is the
+   * blunt operator action that cycles processes and drops what was in flight. That cost
+   * is what makes restarting a MEDIUM blast radius and worth thinking twice about.
+   */
+  state.heapBytes = restingHeapFor(service);
+  state.startedAtMs = world.nowMs;
 
   return finish(world, action, actor);
 }
@@ -178,6 +210,20 @@ function scaleReplicas(
     summary: `Scaled ${service} from ${current} to ${target} replicas.`,
     target: null,
   });
+
+  /*
+   * Replicas that arrive are new processes with clean heaps, so the *typical* replica —
+   * which is what `heapBytes` models and what a memory metric reports — carries less of
+   * whatever the running build has leaked. Scaling down concentrates it again, by the
+   * same arithmetic. This is the whole of `scale_replicas`'s effect on a leak: it buys
+   * time, and buys it once. The leak rate per replica falls too, because the same demand
+   * is divided further, and neither of those stops the leak.
+   */
+  if (target > 0 && current > 0 && world.services[service].config.leakBytesPerReq >= 0) {
+    const state = world.services[service];
+    const resting = restingHeapFor(service);
+    state.heapBytes = resting + (state.heapBytes - resting) * (current / target);
+  }
 
   // Replicas arrive over the rollout ramp, like any other capacity change (FR-9.1).
   scheduleConfigChange(world, service, "replicas", target, ROLLOUT_MS);

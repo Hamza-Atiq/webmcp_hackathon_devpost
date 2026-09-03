@@ -2,6 +2,8 @@ import { useState } from "react";
 import { SCENARIO_IDS, SCENARIO_LABELS, type ScenarioId, type ServiceName } from "../engine";
 import { SPEED_MULTIPLIERS, type SpeedMultiplier } from "../engine/constants";
 import {
+  GC_ERROR_ONSET,
+  GC_ONSET,
   INCIDENT_ERROR_RATE_THRESHOLD,
   INCIDENT_P99_THRESHOLD_MS,
   RECOVERY_P99_MS,
@@ -156,6 +158,25 @@ export function App() {
               thresholds={[
                 { value: INCIDENT_ERROR_RATE_THRESHOLD, label: "opens" },
                 { value: SEV2_ERROR_RATE, label: "SEV-2" },
+              ]}
+            />
+            {/*
+              Memory earns its place on the wall for the same reason the alarm rail
+              exists: a leak is diagnosable only if you can watch the climb and see which
+              line it is about to cross. The thresholds drawn here are the ones the
+              simulation actually uses — the collector starts costing latency at one, the
+              service starts shedding requests at the other — so a human reads the same
+              two numbers the engine does rather than a number with no scale behind it.
+            */}
+            <MetricChart
+              points={points}
+              field="memory"
+              title="Heap used"
+              format={(v) => pct(v, 0)}
+              floor={0.6}
+              thresholds={[
+                { value: GC_ONSET, label: "collecting" },
+                { value: GC_ERROR_ONSET, label: "shedding" },
               ]}
             />
           </div>

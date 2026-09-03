@@ -1,6 +1,11 @@
 import {
   CONTENTION_CPU_GAIN,
   FORWARD_COST,
+  GC_ERROR_GAIN,
+  GC_ERROR_MAX,
+  GC_ERROR_ONSET,
+  GC_LATENCY_GAIN,
+  GC_ONSET,
   CONTENTION_ERROR_GAIN,
   CONTENTION_ERROR_MAX,
   CONTENTION_LATENCY_GAIN,
@@ -202,6 +207,29 @@ export function tick(sim: Sim): void {
      * therefore zero for a healthy service and for every service with no pool at all.
      * The healthy baseline is untouched by this.
      */
+    /*
+     * The heap, and what it costs — FR-9.3's mechanism.
+     *
+     * `heapBytes` is one typical replica's heap, so growth is the service's *demand*
+     * divided between its replicas. Demand, not locally served traffic: requests routed
+     * to a peer are served by another copy of the same leaking build, and every replica
+     * runs it. That is what makes `shift_traffic` worthless here and `scale_replicas`
+     * worth something — one moves the leak, the other divides it.
+     */
+    if (cfg.leakBytesPerReq > 0 && cfg.replicas > 0) {
+      service.heapBytes += (cfg.leakBytesPerReq * offeredRps * TICK_SEC) / cfg.replicas;
+    }
+    const heapFraction =
+      cfg.heapLimitBytes > 0 ? Math.min(1, service.heapBytes / cfg.heapLimitBytes) : 0;
+    const gcFactor =
+      heapFraction <= GC_ONSET
+        ? 1
+        : 1 + ((heapFraction - GC_ONSET) * GC_LATENCY_GAIN) / Math.max(0.02, 1 - heapFraction);
+    const gcErrorRate =
+      heapFraction > GC_ERROR_ONSET
+        ? Math.min(GC_ERROR_MAX, (heapFraction - GC_ERROR_ONSET) * GC_ERROR_GAIN)
+        : 0;
+
     const blockedPerReplica = cfg.replicas > 0 ? service.waiters / cfg.replicas : 0;
     const pressure = blockedPerReplica / WORKERS_PER_REPLICA;
     const contentionFactor = 1 + pressure * CONTENTION_LATENCY_GAIN;
@@ -216,7 +244,8 @@ export function tick(sim: Sim): void {
     for (let i = 0; i < count; i++) {
       const touchesDb = cfg.dbFraction > 0 && world.rng.chance(cfg.dbFraction);
 
-      let latency = world.rng.lognormal(cfg.baseMs, cfg.sigma) * satFactor * contentionFactor;
+      let latency =
+        world.rng.lognormal(cfg.baseMs, cfg.sigma) * satFactor * contentionFactor * gcFactor;
       let acquireMs = 0;
       let queryMs = 0;
       let failed = false;
@@ -248,6 +277,11 @@ export function tick(sim: Sim): void {
       if (!failed && contentionErrorRate > 0 && world.rng.chance(contentionErrorRate)) {
         failed = true;
         failure = "worker pool exhausted: no thread available to accept the request";
+      }
+
+      if (!failed && gcErrorRate > 0 && world.rng.chance(gcErrorRate)) {
+        failed = true;
+        failure = "allocation failed: heap exhausted while the collector was running";
       }
 
       if (!failed && restartErrorRate > 0 && world.rng.chance(restartErrorRate)) {
@@ -299,8 +333,7 @@ export function tick(sim: Sim): void {
     }
 
     acc.cpu = Math.min(1, util + pressure * CONTENTION_CPU_GAIN);
-    acc.memory =
-      cfg.heapLimitBytes > 0 ? Math.min(1, service.heapBytes / cfg.heapLimitBytes) : 0;
+    acc.memory = heapFraction;
 
     // --- log lines describing real pool state -------------------------------
     if (acc.poolSaturated && sim.lastPoolLogSec[name] !== secondNow) {
