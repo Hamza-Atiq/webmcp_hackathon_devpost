@@ -388,6 +388,23 @@ FR-9.3. No action appears in the "full fix" column more than twice (FR-2.4c).
   the incident, contradicting FR-9.2. Shared connection poolers are standard production practice,
   so this costs no realism.
 
+- FR-9.2b **"Spreads CPU load" names a mechanism, and the mechanism must bite.** A request
+  waiting on a connection occupies a worker on the replica that accepted it, so the pool's queue
+  divided by the replica count is the pressure each replica carries. Above a threshold a service
+  sheds requests it could otherwise have served — including requests that never touch the database
+  — and those refusals are what `scale_replicas` removes. It removes nothing else: the pool is
+  shared, so the timeouts remain at any replica count up to the maximum.
+
+  This clause exists because the first implementation satisfied FR-9.2a's letter and not its
+  sense. Utilisation sat far below the saturation knee throughout scenario 1, so scaling was
+  measurably **indistinguishable from doing nothing** — 9.06% against a control's 9.06% — and the
+  matrix said "partial relief" about an action with no effect at all. Any scenario whose row
+  claims partial relief must name the channel it arrives through, and a test must measure it
+  against a control on at least two seeds.
+
+  **Failure test:** if `scale_replicas` and `shift_traffic` produce indistinguishable signals in
+  scenario 1, the requirement is not met — the row separates them and the environment must too.
+
 - FR-9.3 In scenario 2, `restart_service` produces temporary recovery followed by renewed
   degradation — mitigation, not a fix. The distinction must be observable in the metrics.
 - FR-9.4 In scenario 4, `scale_replicas` measurably worsens the incident: more replicas open more
