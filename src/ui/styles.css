@@ -8,6 +8,12 @@
  *
  * Red appears nowhere except an open incident. That is the whole point of the
  * restraint: when the rail turns red it is the only red on screen.
+ *
+ * The muted inks and the two status hues were lifted once, for legibility: the old
+ * --ink-faint sat at 3.19:1 on --deck and carried 42 rules, which is unreadable under
+ * video compression and fails WCAG AA outright. Every foreground now clears 4.5:1 on
+ * every panel it is used on. Hue and hierarchy are unchanged -- this is the same room,
+ * with the lamp turned up.
  */
 
 :root {
@@ -19,13 +25,13 @@
   --rule-soft: #1e232b;
 
   --ink: #e9e6df;
-  --ink-dim: #9a9589;
-  --ink-faint: #6b675f;
+  --ink-dim: #bdb7ab;
+  --ink-faint: #9b958a;
 
   --amber: #e8a33d;
   --amber-dim: #8a6528;
-  --sage: #6fa98a;
-  --alarm: #e3452f;
+  --sage: #86c3a2;
+  --alarm: #f2604a;
 
   --sans: "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -478,7 +484,7 @@ input {
 
 .service-deps {
   grid-column: 2;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--ink-faint);
 }
 
@@ -732,7 +738,7 @@ input {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--ink-dim);
   cursor: pointer;
 }
@@ -932,7 +938,7 @@ button.record:hover {
 
 .rolled-back {
   margin-left: 9px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--sage);
   border: 1px solid var(--sage);
   border-radius: 2px;
@@ -1087,7 +1093,7 @@ button.record:hover {
 
 .note {
   margin: 9px 0 0;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
   color: var(--ink-faint);
 }
@@ -1148,7 +1154,7 @@ button.record:hover {
 }
 
 .event-message {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.55;
   color: var(--ink-dim);
 }
