@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
-import { Engine, type ServiceName } from "../engine";
+import { Engine, type ScenarioId, type ServiceName } from "../engine";
 import { TICK_MS, type SpeedMultiplier } from "../engine/constants";
 import type { AuditEntry } from "../mcp/audit";
 import type { Proposal } from "../mcp/proposals";
@@ -55,6 +55,9 @@ export interface Simulation {
   speed: SpeedMultiplier;
   setSpeed(speed: SpeedMultiplier): void;
   reset(): void;
+  /** FR-2.1, FR-2.2 — pick a scenario; the environment restarts healthy at T+0. */
+  scenario: ScenarioId;
+  setScenario(id: ScenarioId): void;
   /** FR-5.2 — begin the scenario immediately instead of waiting out the healthy window. */
   triggerScenario(): void;
   scenarioPending: boolean;
@@ -136,13 +139,19 @@ export function useSimulation(): Simulation {
     repaint();
   }, []);
 
+  const setScenario = useCallback((id: ScenarioId) => {
+    // FR-2.2 — a different scenario is a different run, from a healthy T+0.
+    resetSession(id);
+    repaint();
+  }, []);
+
   const triggerScenario = useCallback(() => {
-    const { engine } = session();
+    const { engine, scenario } = session();
     if (!engine.scenarioPending) return;
-    engine.startScenario("s1");
+    engine.startScenario(scenario);
     // FR-8.0 — the world an open proposal was reasoning about no longer exists.
     cancelOpenProposals("the scenario was switched");
-    record("start_scenario", "scenario: s1", "Scenario started immediately", true, "C");
+    record("start_scenario", `scenario: ${scenario}`, "Scenario started immediately", true, "C");
     repaint();
   }, [record]);
 
@@ -239,6 +248,8 @@ export function useSimulation(): Simulation {
     setSpeed,
     reset,
     triggerScenario,
+    scenario: current.scenario,
+    setScenario,
     scenarioPending: current.engine.scenarioPending,
     rollback,
     remediate,

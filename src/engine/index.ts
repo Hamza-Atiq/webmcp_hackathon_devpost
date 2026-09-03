@@ -9,7 +9,7 @@ import { seedBaselineHistory } from "./deployments";
 import { seedFeatureFlags } from "./flags";
 import { applyRemediation, type RemediationOutcome, type RemediationParams } from "./remediation";
 import { actionById, mostRecentAction, type ActionKind, type AppliedAction } from "./actions";
-import { onset as s1Onset } from "./scenarios/s1";
+import { startScenario as runOnset, type ScenarioId } from "./scenarios";
 import type { Incident, IncidentStatus, MetricPoint, ServiceName, TimelineEntry } from "./types";
 
 /**
@@ -19,8 +19,6 @@ import type { Incident, IncidentStatus, MetricPoint, ServiceName, TimelineEntry 
  * call this, and so do the tests. Keeping it that way is what lets the outcome matrix in
  * FR-9.2 be verified headlessly in seconds rather than by hand in a browser.
  */
-
-export type ScenarioId = "s1";
 
 export interface EngineOptions {
   /**
@@ -81,7 +79,7 @@ export class Engine {
    */
   startScenario(id: ScenarioId): void {
     this.pending = null;
-    if (id === "s1") s1Onset(this.world);
+    runOnset(this.world, id);
   }
 
   health(service: ServiceName): MetricPoint | null {
@@ -169,6 +167,8 @@ export class Engine {
 }
 
 export { SERVICE_NAMES, restingHeapFor } from "./world";
+export { SCENARIO_IDS, SCENARIO_LABELS } from "./scenarios";
+export type { ScenarioId } from "./scenarios";
 export { classifySeverity, isBreaching, isRecovered, STATUS_ORDER } from "./incident";
 export { RUNBOOKS, findRunbooks, runbookById } from "./runbooks";
 export { OWNERSHIP, ownershipFor } from "./ownership";

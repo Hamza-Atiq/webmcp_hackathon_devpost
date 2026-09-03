@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ServiceName } from "../engine";
+import { SCENARIO_IDS, SCENARIO_LABELS, type ScenarioId, type ServiceName } from "../engine";
 import { SPEED_MULTIPLIERS, type SpeedMultiplier } from "../engine/constants";
 import {
   INCIDENT_ERROR_RATE_THRESHOLD,
@@ -44,6 +44,26 @@ export function App() {
         <span className="clock" title="Simulated time since the environment started">
           {simClock(engine.world.nowMs)}
         </span>
+
+        {/*
+          FR-2.1 — scenarios are selectable by name, and the name is a number. A label
+          reading "memory leak" would hand a judge the diagnosis before they looked, and
+          FR-2.5 forbids the tool layer from disclosing it at all; the interface should
+          not undo through a dropdown what the tool contracts are careful to withhold.
+        */}
+        <label className="scenario-pick">
+          <span className="scenario-pick-label">Scenario</span>
+          <select
+            value={sim.scenario}
+            onChange={(event) => sim.setScenario(event.target.value as ScenarioId)}
+          >
+            {SCENARIO_IDS.map((id) => (
+              <option key={id} value={id}>
+                {SCENARIO_LABELS[id]}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <div className="speeds" role="group" aria-label="Simulation speed">
           {SPEED_MULTIPLIERS.map((multiplier) => (

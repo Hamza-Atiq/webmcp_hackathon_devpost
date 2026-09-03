@@ -1,4 +1,4 @@
-import { Engine } from "./engine";
+import { Engine, type ScenarioId } from "./engine";
 import { HEALTHY_WINDOW_MS } from "./engine/constants";
 import { AuditLog } from "./mcp/audit";
 import { EvidenceRegistry } from "./mcp/evidence";
@@ -20,22 +20,25 @@ import { ProposalStore } from "./mcp/proposals";
 
 export interface Session {
   engine: Engine;
+  /** Which scenario this run will start. FR-2.2 — exactly one is ever active. */
+  scenario: ScenarioId;
   evidence: EvidenceRegistry;
   audit: AuditLog;
   proposals: ProposalStore;
 }
 
-function create(): Session {
+function create(scenario: ScenarioId): Session {
   return {
+    scenario,
     /** FR-5.1 — healthy for a fixed window, then the scenario begins on its own. */
-    engine: new Engine(undefined, { autoStart: { id: "s1", atMs: HEALTHY_WINDOW_MS } }),
+    engine: new Engine(undefined, { autoStart: { id: scenario, atMs: HEALTHY_WINDOW_MS } }),
     evidence: new EvidenceRegistry(),
     audit: new AuditLog(),
     proposals: new ProposalStore(),
   };
 }
 
-let current: Session = create();
+let current: Session = create("s1");
 
 const listeners = new Set<() => void>();
 
@@ -43,7 +46,14 @@ export function session(): Session {
   return current;
 }
 
-export function resetSession(): void {
+/**
+ * FR-2.2 — selecting another scenario resets the environment to a healthy T+0.
+ *
+ * Not "switches the running world to a different failure": the healthy window has to be
+ * lived through again, because the twenty seconds before an incident are evidence too,
+ * and an agent handed a world that was already broken cannot tell what changed.
+ */
+export function resetSession(scenario: ScenarioId = current.scenario): void {
   /*
    * Cancellation comes first, and this is not tidiness. `dispose` drops the settler for
    * every waiting proposal, so a reset while an agent sat blocked on
@@ -55,7 +65,7 @@ export function resetSession(): void {
    */
   cancelOpenProposals("the environment was reset");
   current.proposals.dispose();
-  current = create();
+  current = create(scenario);
   notifySession();
 }
 

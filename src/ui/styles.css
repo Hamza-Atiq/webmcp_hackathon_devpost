@@ -482,6 +482,34 @@ input {
   color: var(--ink-faint);
 }
 
+.scenario-pick {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.scenario-pick-label {
+  font: 400 10px/1 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
+}
+
+.scenario-pick select {
+  font: 500 11px/1 var(--mono);
+  color: var(--ink);
+  background: var(--void);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.scenario-pick select:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+
 /* ── vitals ──────────────────────────────────────────────────────── */
 
 .vitals {

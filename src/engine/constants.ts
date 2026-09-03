@@ -74,6 +74,21 @@ export const GATEWAY_TIMEOUT_MS = 3000;
  * Blocked requests per replica, over this, is the pressure. Below the onset a service
  * absorbs the contention; above it, it starts shedding.
  */
+/**
+ * What a shifted request still costs the service it was shifted away from.
+ *
+ * `shift_traffic` moves requests to peers; it does not stop them arriving. They are
+ * received, matched to a route and forwarded, which is much cheaper than serving them
+ * and is not free. Without this, moving half a service's traffic away and doubling its
+ * replica count are the *same arithmetic* — both halve utilisation — and no capacity
+ * scenario could ever distinguish "full fix" from "partial relief" (FR-9.2, scenario 5).
+ *
+ * It is a property of forwarding, not of any scenario, so it applies everywhere: in
+ * scenario 1 it changes nothing, because that incident is a queue on a shared pool and
+ * not a shortage of CPU.
+ */
+export const FORWARD_COST = 0.35;
+
 export const WORKERS_PER_REPLICA = 120;
 export const CONTENTION_ONSET = 0.4;
 export const CONTENTION_ERROR_GAIN = 0.15;

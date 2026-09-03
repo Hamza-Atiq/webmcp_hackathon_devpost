@@ -1,5 +1,6 @@
 import {
   CONTENTION_CPU_GAIN,
+  FORWARD_COST,
   CONTENTION_ERROR_GAIN,
   CONTENTION_ERROR_MAX,
   CONTENTION_LATENCY_GAIN,
@@ -139,7 +140,15 @@ export function tick(sim: Sim): void {
     sim.remainder[name] = exact - count;
 
     // --- saturation ---------------------------------------------------------
-    const util = cfg.capacityPerReplica > 0 ? rps / cfg.replicas / cfg.capacityPerReplica : 0;
+    /*
+     * Utilisation counts what the service *handles*, which is more than what it serves:
+     * a request routed to a peer still arrives here to be forwarded. See FORWARD_COST —
+     * it is the only reason scaling and shifting are not the same arithmetic.
+     */
+    const forwarded = offeredRps * service.trafficShiftedAway * FORWARD_COST;
+    const handledRps = rps + forwarded;
+    const util =
+      cfg.capacityPerReplica > 0 ? handledRps / cfg.replicas / cfg.capacityPerReplica : 0;
     const satFactor =
       util <= SATURATION_KNEE ? 1 : 1 + (util - SATURATION_KNEE) / Math.max(0.02, 1 - util);
     const satErrorRate = util > 1 ? Math.min(0.5, (util - 1) * 0.8) : 0;
